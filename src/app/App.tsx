@@ -16,6 +16,7 @@ import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
+import { DisclaimerGate } from '../components/settings/DisclaimerGate.js'
 import { Toast } from '../components/base/Toast.js'
 import { showToast } from '../components/base/toastState.js'
 import { onUploadNotice } from '../services/attachments.js'
@@ -69,8 +70,10 @@ export const App = () => {
 
   useEffect(() => {
     void initChat()
-    // 首次打开先在设置里输入 API Key
-    ensureApiKey()
+    // 首次使用先确认非官方声明；确认后再要求 API Key
+    if (useSettings.getState().disclaimerAccepted) {
+      ensureApiKey()
+    }
   }, [])
 
   return (
@@ -133,6 +136,7 @@ export const App = () => {
         <SearchPanel />
       </div>
       <SettingsDialog />
+      <DisclaimerGate />
       <Toast />
     </>
   )

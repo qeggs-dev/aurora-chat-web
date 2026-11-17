@@ -14,7 +14,34 @@ export const en = {
     'Chats or attachments have not been saved locally. Retry before closing this page.',
   sessionDeleteFailed: 'Unable to delete this chat. Please try again.',
   settings: 'Settings',
-  appName: 'API usage demo',
+  appName: 'DSLike Chat',
+  aboutTitle: 'About',
+  aboutBadge: 'Unofficial',
+  aboutDisclaimerTitle: 'Unofficial build',
+  aboutDisclaimer:
+    'DSLike Chat is a third-party wrapper around the open-source chat-demo project. It is not a DeepSeek product and is not affiliated with or endorsed by DeepSeek. Names, interface and trademarks belong to their respective owners.',
+  aboutUpstreamLabel: 'Upstream project',
+  aboutLicenseLabel: 'Open-source license (MIT)',
+  aboutIconsLabel: 'Icon',
+  aboutIconsText:
+    'The app icon uses the DeepSeek whale mark for identification only; it does not imply an official release or endorsement.',
+  aboutThirdPartyLabel: 'Third-party components',
+  aboutThirdPartyText:
+    'Electron, Chromium, Capacitor and the front-end dependencies keep their own licenses. The desktop package ships LICENSE.electron.txt, LICENSES.chromium.html and NOTICE.md.',
+  aboutVersionLabel: 'Version',
+  disclaimerGateTitle: 'Before you start',
+  disclaimerGateLead:
+    'DSLike Chat is a third-party wrapper built by community members on top of the open-source chat-demo project.',
+  disclaimerGatePointNotOfficial:
+    'It is not a DeepSeek product and has no affiliation, partnership or authorization from DeepSeek.',
+  disclaimerGatePointCommunity:
+    'The interface and features come from the public chat-demo code; this project only adds shells and small modifications on top of it.',
+  disclaimerGatePointLicense:
+    'Upstream code is released under the MIT license; names, marks and trademarks belong to their respective owners.',
+  disclaimerGateUpstreamLabel: 'Upstream project: ',
+  disclaimerGateAfter:
+    'By continuing you confirm that you have read and understood the notice above. You can revisit it any time under Settings -> About.',
+  disclaimerGateAccept: 'I understand, continue',
   deleteSessionModalContentTitle: 'Delete chat?',
   deleteSessionWithFilesDescription:
     'This chat and its uploaded files will be permanently deleted and cannot be recovered. Delete this chat?',

@@ -52,6 +52,7 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
     icon: <IconSettingsOutline16 />,
   },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
+  { value: 'about', label: 'aboutTitle', icon: <InfoIcon /> },
 ]
 
 const SettingsContent = () => {
@@ -101,6 +102,8 @@ const SettingsContent = () => {
               <TtsVoiceSetting />
               <LocationSetting />
             </>
+          ) : section === 'about' ? (
+            <AboutSection />
           ) : (
             <>
               <ApiKeyField editor={apiKeyEditor} />
@@ -555,5 +558,85 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
         </Button>
       }
     />
+  )
+}
+
+/** 关于页：非官方声明、上游链接与上游 MIT 许可全文 */
+function InfoIcon() {
+  return (
+  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+    <circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    <circle cx="8" cy="5" r="0.9" fill="currentColor" />
+    <path d="M8 7.2v4.1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
+  )
+}
+
+const UPSTREAM_URL = 'https://github.com/deepseek-ai/chat-demo'
+
+const UPSTREAM_REPO_LABEL = 'github.com/deepseek-ai/chat-demo'
+
+const UPSTREAM_LICENSE = `MIT License
+
+Copyright (c) 2026 DeepSeek
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.`
+
+const appVersion = () =>
+  document.querySelector('meta[name="application-version"]')?.getAttribute('content') ?? ''
+
+const AboutSection = () => {
+  const t = useTranslate()
+  const version = appVersion()
+  return (
+    <div className={styles.about}>
+      <div className={styles.aboutHeader}>
+        <span className={styles.aboutName}>{t('appName')}</span>
+        <span className={styles.aboutBadge}>{t('aboutBadge')}</span>
+        {version ? (
+          <span className={styles.aboutVersion}>
+            {t('aboutVersionLabel')} {version}
+          </span>
+        ) : null}
+      </div>
+      <div className={styles.aboutBlock}>
+        <div className={styles.aboutLabel}>{t('aboutDisclaimerTitle')}</div>
+        <p className={styles.aboutText}>{t('aboutDisclaimer')}</p>
+      </div>
+      <div className={styles.aboutBlock}>
+        <div className={styles.aboutLabel}>{t('aboutUpstreamLabel')}</div>
+        <a className={styles.aboutLink} href={UPSTREAM_URL} target="_blank" rel="noreferrer noopener">
+          {UPSTREAM_REPO_LABEL}
+        </a>
+      </div>
+      <div className={styles.aboutBlock}>
+        <div className={styles.aboutLabel}>{t('aboutLicenseLabel')}</div>
+        <pre className={styles.aboutLicense}>{UPSTREAM_LICENSE}</pre>
+      </div>
+      <div className={styles.aboutBlock}>
+        <div className={styles.aboutLabel}>{t('aboutIconsLabel')}</div>
+        <p className={styles.aboutText}>{t('aboutIconsText')}</p>
+      </div>
+      <div className={styles.aboutBlock}>
+        <div className={styles.aboutLabel}>{t('aboutThirdPartyLabel')}</div>
+        <p className={styles.aboutText}>{t('aboutThirdPartyText')}</p>
+      </div>
+    </div>
   )
 }

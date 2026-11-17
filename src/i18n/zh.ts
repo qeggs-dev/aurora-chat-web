@@ -11,7 +11,31 @@ export const zh = {
   sessionSaveFailed: '对话或附件尚未保存到本机，关闭页面可能丢失，请重试',
   sessionDeleteFailed: '删除对话失败，请重试',
   settings: '设置',
-  appName: 'API 使用 demo',
+  appName: 'DSLike Chat',
+  aboutTitle: '关于',
+  aboutBadge: '非官方封装',
+  aboutDisclaimerTitle: '非官方声明',
+  aboutDisclaimer:
+    'DSLike Chat 是基于开源项目 chat-demo 的第三方封装，不是 DeepSeek 官方产品，也未获得 DeepSeek 的授权或背书。名称、界面与商标归各自权利人所有。',
+  aboutUpstreamLabel: '上游项目',
+  aboutLicenseLabel: '开源许可（MIT）',
+  aboutIconsLabel: '图标',
+  aboutIconsText: '应用图标使用 DeepSeek 鲸鱼标记，仅用于界面识别，不代表官方发布或背书。',
+  aboutThirdPartyLabel: '第三方组件',
+  aboutThirdPartyText:
+    'Electron、Chromium、Capacitor 与各前端依赖遵循其自身许可；桌面分发包内附 LICENSE.electron.txt、LICENSES.chromium.html 与 NOTICE.md。',
+  aboutVersionLabel: '版本',
+  disclaimerGateTitle: '使用前请确认',
+  disclaimerGateLead: 'DSLike Chat 是社区成员基于开源项目 chat-demo 修改而成的第三方封装。',
+  disclaimerGatePointNotOfficial:
+    '它不是 DeepSeek 官方产品，与深度求索及其关联公司没有隶属、合作或授权关系。',
+  disclaimerGatePointCommunity:
+    '界面与功能来自 chat-demo 项目的公开代码，本项目只在其上做了封装与少量修改。',
+  disclaimerGatePointLicense: '上游代码以 MIT 许可发布；名称、标识与商标归各自权利人所有。',
+  disclaimerGateUpstreamLabel: '上游项目：',
+  disclaimerGateAfter:
+    '点击下方按钮表示你已阅读并知悉以上内容。之后可在「设置 → 关于」随时查看完整声明与许可。',
+  disclaimerGateAccept: '我已知悉，继续使用',
   deleteSessionModalContentTitle: '永久删除对话',
   deleteSessionWithFilesDescription: '删除后，该对话及其中上传的文件将不可恢复。确认删除吗？',
   cancel: '取消',

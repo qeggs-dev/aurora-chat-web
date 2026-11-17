@@ -1,0 +1,46 @@
+.dialog {
+  width: 460px;
+  max-width: calc(100vw - 32px);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lead {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.points {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 21px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 21px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.link {
+  color: var(--dsw-alias-brand-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+

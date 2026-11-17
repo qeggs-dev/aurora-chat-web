@@ -440,3 +440,87 @@
     max-width: 100%;
   }
 }
+
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-bottom: 8px;
+}
+
+.aboutHeader {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.aboutName {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.aboutBadge {
+  padding: 2px 8px;
+  border-radius: 100px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.aboutVersion {
+  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.aboutBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aboutLabel {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.aboutText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 21px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.aboutLink {
+  font-size: 13px;
+  line-height: 21px;
+  color: var(--dsw-alias-brand-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.aboutLink:hover {
+  text-decoration: underline;
+}
+
+.aboutLicense {
+  box-sizing: border-box;
+  max-height: 220px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-markdown-code);
+  white-space: pre-wrap;
+}
+

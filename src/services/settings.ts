@@ -17,6 +17,8 @@ type Settings = {
   thinking: boolean
   search: boolean
   siderCollapsed: boolean
+  /** 是否已确认首次使用声明（非官方封装） */
+  disclaimerAccepted: boolean
 }
 
 const KEYS = {
@@ -28,6 +30,7 @@ const KEYS = {
   thinking: 'chat-demo:thinking',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
+  disclaimerAccepted: 'chat-demo:disclaimer-accepted',
 } as const
 
 const read = (key: string) => {
@@ -96,6 +99,7 @@ export const useSettings = create<Settings>(() => ({
   thinking: read(KEYS.thinking) === 'true',
   search: read(KEYS.search) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
+  disclaimerAccepted: read(KEYS.disclaimerAccepted) === 'true',
 }))
 
 export const setLocale = (locale: Locale) => {
@@ -137,4 +141,10 @@ export const setSearch = (search: boolean) => {
 export const setSiderCollapsed = (siderCollapsed: boolean) => {
   write(KEYS.siderCollapsed, String(siderCollapsed))
   useSettings.setState({ siderCollapsed })
+}
+
+/** 首次使用确认：只写一次，之后不再弹窗 */
+export const acceptDisclaimer = () => {
+  write(KEYS.disclaimerAccepted, 'true')
+  useSettings.setState({ disclaimerAccepted: true })
 }
