@@ -20,7 +20,7 @@ export const zh = {
   aboutUpstreamLabel: '上游项目',
   aboutLicenseLabel: '开源许可（MIT）',
   aboutIconsLabel: '图标',
-  aboutIconsText: '应用图标使用 DeepSeek 鲸鱼标记，仅用于界面识别，不代表官方发布或背书。',
+  aboutIconsText: '应用图标是本项目自绘的 DS 标记与聊天气泡组合，不是 DeepSeek 官方图形，仅用于界面识别。',
   aboutThirdPartyLabel: '第三方组件',
   aboutThirdPartyText:
     'Electron、Chromium、Capacitor 与各前端依赖遵循其自身许可；桌面分发包内附 LICENSE.electron.txt、LICENSES.chromium.html 与 NOTICE.md。',

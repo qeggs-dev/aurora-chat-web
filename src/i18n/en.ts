@@ -24,7 +24,7 @@ export const en = {
   aboutLicenseLabel: 'Open-source license (MIT)',
   aboutIconsLabel: 'Icon',
   aboutIconsText:
-    'The app icon uses the DeepSeek whale mark for identification only; it does not imply an official release or endorsement.',
+    'The app icon is this project's own DS-and-chat-bubble mark, not an official DeepSeek graphic; it is used for identification only.',
   aboutThirdPartyLabel: 'Third-party components',
   aboutThirdPartyText:
     'Electron, Chromium, Capacitor and the front-end dependencies keep their own licenses. The desktop package ships LICENSE.electron.txt, LICENSES.chromium.html and NOTICE.md.',
