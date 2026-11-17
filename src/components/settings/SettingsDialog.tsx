@@ -64,24 +64,28 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
 ]
 
 /** 内容区按分组叠加背景图；样式页本身不需要背景图，只用基础内容类 */
-/** 把某个背景槽位的全部变量映射到整卡背景上；没有样式包时变量为空，等同于无背景 */
-const settingBackground = (suffix: string): CSSProperties =>
+/**
+ * 把某个背景槽位的全部变量映射到整卡背景上；没有样式包时变量为空，等同于无背景。
+ * 专属槽位缺失时回退到 setting.generic：旧样式包只提供了通用设置背景，
+ * 新增的「样式 / 预设 / 用量统计」页也能跟着有背景，而不是白底。
+ */
+const settingBackground = (suffix: string, fallback = 'setting-generic'): CSSProperties =>
   ({
-    '--dslike-setting-image': `var(--dslike-bg-${suffix}-image, none)`,
-    '--dslike-setting-alpha': `var(--dslike-bg-${suffix}-alpha, 1)`,
-    '--dslike-setting-brightness': `var(--dslike-bg-${suffix}-brightness, 1)`,
-    '--dslike-setting-size': `var(--dslike-bg-${suffix}-size, cover)`,
-    '--dslike-setting-position': `var(--dslike-bg-${suffix}-position, center)`,
-    '--dslike-setting-repeat': `var(--dslike-bg-${suffix}-repeat, no-repeat)`,
-    '--dslike-setting-rendering': `var(--dslike-bg-${suffix}-rendering, auto)`,
+    '--dslike-setting-image': `var(--dslike-bg-${suffix}-image, var(--dslike-bg-${fallback}-image, none))`,
+    '--dslike-setting-alpha': `var(--dslike-bg-${suffix}-alpha, var(--dslike-bg-${fallback}-alpha, 1))`,
+    '--dslike-setting-brightness': `var(--dslike-bg-${suffix}-brightness, var(--dslike-bg-${fallback}-brightness, 1))`,
+    '--dslike-setting-size': `var(--dslike-bg-${suffix}-size, var(--dslike-bg-${fallback}-size, cover))`,
+    '--dslike-setting-position': `var(--dslike-bg-${suffix}-position, var(--dslike-bg-${fallback}-position, center))`,
+    '--dslike-setting-repeat': `var(--dslike-bg-${suffix}-repeat, var(--dslike-bg-${fallback}-repeat, no-repeat))`,
+    '--dslike-setting-rendering': `var(--dslike-bg-${suffix}-rendering, var(--dslike-bg-${fallback}-rendering, auto))`,
   }) as CSSProperties
 
 const settingBackgrounds: Record<SettingsSection, CSSProperties> = {
   general: settingBackground('setting-generic'),
   data: settingBackground('setting-datas'),
-  usage: {},
-  style: {},
-  preset: {},
+  usage: settingBackground('setting-usage'),
+  style: settingBackground('setting-style'),
+  preset: settingBackground('setting-preset'),
   about: settingBackground('setting-about'),
 }
 

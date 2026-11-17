@@ -50,6 +50,9 @@ const BACKGROUND_SUFFIX: Record<string, string> = {
   [STYLE_SLOTS.bgSettingGeneric]: 'setting-generic',
   [STYLE_SLOTS.bgSettingDatas]: 'setting-datas',
   [STYLE_SLOTS.bgSettingAbout]: 'setting-about',
+  [STYLE_SLOTS.bgSettingStyle]: 'setting-style',
+  [STYLE_SLOTS.bgSettingPreset]: 'setting-preset',
+  [STYLE_SLOTS.bgSettingUsage]: 'setting-usage',
 }
 
 type BackgroundVars = {
