@@ -1,4 +1,5 @@
 .sider {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -8,6 +9,26 @@
   padding: 6px 12px 0;
   border-right: 1px solid var(--dsw-alias-border-l1);
   background-color: var(--dsw-specific-sidebar-fill);
+
+  /* 样式包侧边栏背景图：标题、新会话、列表与设置都在它之上 */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--dslike-bg-sidebar-image, none);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: var(--dslike-bg-sidebar-alpha, 1);
+    filter: brightness(var(--dslike-bg-sidebar-brightness, 1));
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  & > * {
+    position: relative;
+    z-index: 1;
+  }
 }
 
 .top {
@@ -58,6 +79,27 @@
     0 2px 2px rgba(106, 111, 117, 0.09),
     0 1px 2px rgba(72, 104, 178, 0.08);
   transition: box-shadow 0.3s ease;
+
+  /* 样式包「新会话」背景图：图标与文字在它之上 */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-image: var(--dslike-bg-new-session-image, none);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: var(--dslike-bg-new-session-alpha, 1);
+    filter: brightness(var(--dslike-bg-new-session-brightness, 1));
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  & > * {
+    position: relative;
+    z-index: 1;
+  }
 
   &:hover {
     box-shadow:
@@ -233,7 +275,9 @@
     width: auto;
     height: auto;
 
-    svg {
+    /* 样式包图标是 img，尺寸与内置 svg 对齐 */
+    svg,
+    img {
       width: 20px;
       height: 20px;
     }

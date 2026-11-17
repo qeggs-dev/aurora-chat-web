@@ -2,6 +2,9 @@ import clsx from 'clsx'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
+import { useStyleSidebarTitle } from '../../services/style/store.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
 import { newChat, removeSession, useChatStore } from '../../services/chat/store.js'
@@ -18,6 +21,7 @@ import styles from './Sider.module.css'
 /** 展开的侧边栏：名称与收起按钮、开启新对话、按时间分组的会话列表、底部设置；移动端放在抽屉里，收起按钮关闭抽屉 */
 export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const t = useTranslate()
+  const styleTitle = useStyleSidebarTitle()
   const sessions = useChatStore((state) => state.sessions)
   const activeId = useChatStore((state) => state.activeId)
   const [now, setNow] = useState(Date.now)
@@ -52,10 +56,16 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   return (
     <div className={clsx(styles.sider, mobile && styles.mobile)}>
       <div className={styles.top}>
-        <div className={styles.appName}>{t('appName')}</div>
+        <div className={styles.appName}>{styleTitle ?? t('appName')}</div>
         <IconButton
           size="m"
-          icon={<IconPanelLeftOutline16 />}
+          icon={
+            <PackIcon
+              slot={STYLE_SLOTS.iconExitSidebar}
+              size={16}
+              fallback={<IconPanelLeftOutline16 />}
+            />
+          }
           tooltip={t('collapseSiderbarButton')}
           tooltipPlacement="bottom"
           onClick={() => (mobile ? closeMobileSider() : setSiderCollapsed(true))}
@@ -70,9 +80,9 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
         }}
       >
         <span className={styles.newChatIcon}>
-          <NewChatIcon />
+          <PackIcon slot={STYLE_SLOTS.iconNewSession} size={16} fallback={<NewChatIcon />} />
         </span>
-        {t('newChat')}
+        <span>{t('newChat')}</span>
       </button>
       <div className={styles.listWrap}>
         <div className={styles.list}>
@@ -94,7 +104,11 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
       <div className={styles.bottom}>
         <button type="button" className={styles.settings} onClick={() => openSettings('general')}>
           <span className={styles.settingsIcon}>
-            <IconSettingsOutline16 />
+            <PackIcon
+              slot={STYLE_SLOTS.iconSettingSetting}
+              size={16}
+              fallback={<IconSettingsOutline16 />}
+            />
           </span>
           <span className={styles.settingsLabel}>{t('settings')}</span>
         </button>

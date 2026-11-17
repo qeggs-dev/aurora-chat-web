@@ -1,4 +1,6 @@
 import { useTranslate } from '../../i18n/index.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { memo, useEffect, useMemo, useReducer, useState } from 'react'
 import Prism from 'prismjs'
 import {
@@ -62,7 +64,7 @@ const CodeInfoRow = ({
           setTimeout(() => setCopied(false), 1500)
         }}
       >
-        {copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}
+        {copied ? <IconCheckOutline16 /> : <PackIcon slot={STYLE_SLOTS.iconCopy} fallback={<IconCopyOutline16 />} />}
         <span>{t(copied ? 'copied' : 'copy')}</span>
       </button>
     </div>

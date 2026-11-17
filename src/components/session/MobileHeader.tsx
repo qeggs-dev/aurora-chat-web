@@ -1,4 +1,6 @@
 import { IconMenuOutline20, IconNewChatOutline20 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { useTranslate } from '../../i18n/index.js'
 import { newChat } from '../../services/chat/store.js'
 import { IconButton } from '../base/IconButton.js'
@@ -13,7 +15,13 @@ export const MobileHeader = ({ title }: { title?: string }) => {
       <IconButton
         size="xl"
         tone="primary"
-        icon={<IconMenuOutline20 />}
+        icon={
+          <PackIcon
+            slot={STYLE_SLOTS.iconEnterSidebar}
+            size={20}
+            fallback={<IconMenuOutline20 />}
+          />
+        }
         aria-label={t('expandSiderbarButton')}
         onClick={openMobileSider}
       />

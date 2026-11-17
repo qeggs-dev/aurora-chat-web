@@ -3,6 +3,26 @@
   inset: 0;
   display: flex;
   flex-direction: column;
+
+  /* 样式包会话背景图：消息与输入框都在它之上 */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--dslike-bg-chat-image, none);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: var(--dslike-bg-chat-alpha, 1);
+    filter: brightness(var(--dslike-bg-chat-brightness, 1));
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  & > * {
+    position: relative;
+    z-index: 1;
+  }
 }
 
 .header {

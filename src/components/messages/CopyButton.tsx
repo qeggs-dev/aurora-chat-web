@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { useTranslate } from '../../i18n/index.js'
 import { IconCheckOutline16, IconCopyOutline16 } from '../base/icons.js'
 import { IconButton } from '../base/IconButton.js'
@@ -14,7 +16,7 @@ export const CopyButton = ({ text }: { text: string }) => {
 
   return (
     <IconButton
-      icon={copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}
+      icon={copied ? <IconCheckOutline16 /> : <PackIcon slot={STYLE_SLOTS.iconCopy} fallback={<IconCopyOutline16 />} />}
       tooltip={t('copy')}
       tooltipPlacement="bottom"
       onClick={async () => {

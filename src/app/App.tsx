@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
+import { initStylePacks } from '../services/style/store.js'
 import { useIsMobile, useMobileViewport, usePreventPageScroll } from './viewport.js'
 import {
   bindChatPersistence,
@@ -70,6 +71,8 @@ export const App = () => {
 
   useEffect(() => {
     void initChat()
+    // 自定义样式包：读取已安装的包并应用当前启用的一套
+    void initStylePacks()
     // 首次使用先确认非官方声明；确认后再要求 API Key
     if (useSettings.getState().disclaimerAccepted) {
       ensureApiKey()

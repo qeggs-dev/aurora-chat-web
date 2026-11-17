@@ -1,4 +1,6 @@
 import { useTranslate } from '../../i18n/index.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import clsx from 'clsx'
 import { memo } from 'react'
 import { IconRefreshOutline16, IconWarningOutline16 } from '../base/icons.js'
@@ -147,7 +149,7 @@ export const AssistantMessage = memo(function AssistantMessage({
               <ReadAloudButton messageId={message.id} text={responseText} />
             ) : null}
             <IconButton
-              icon={<IconRefreshOutline16 />}
+              icon={<PackIcon slot={STYLE_SLOTS.iconRegen} fallback={<IconRefreshOutline16 />} />}
               tooltip={t('regenerate')}
               tooltipPlacement="bottom"
               disabled={busy || refused}

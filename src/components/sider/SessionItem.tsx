@@ -2,6 +2,8 @@ import clsx from 'clsx'
 import { memo, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconEditOutline16, IconEllipsisOutline16, IconTrashOutline16 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { renameSession, selectSession } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
 import { IconButton } from '../base/IconButton.js'
@@ -62,20 +64,22 @@ export const SessionItem = memo(function SessionItem({
             {
               key: 'rename',
               label: t('sessionItemMenuRenameOption'),
-              icon: <IconEditOutline16 />,
+              icon: (
+                <PackIcon slot={STYLE_SLOTS.iconEdit} size={16} fallback={<IconEditOutline16 />} />
+              ),
               onSelect: () => setEditing(true),
             },
             {
               key: 'delete',
               label: t('delete'),
-              icon: <IconTrashOutline16 />,
+              icon: <PackIcon slot={STYLE_SLOTS.iconDelete} fallback={<IconTrashOutline16 />} />,
               danger: true,
               onSelect: onDelete,
             },
           ]}
         >
           {({ toggle }) => (
-            <IconButton icon={<IconEllipsisOutline16 />} aria-label={t('more')} onClick={toggle} />
+            <IconButton icon={<PackIcon slot={STYLE_SLOTS.iconMenu} fallback={<IconEllipsisOutline16 />} />} aria-label={t('more')} onClick={toggle} />
           )}
         </Menu>
       </div>

@@ -1,6 +1,7 @@
 .wrapper {
   --line-height: 24px;
   --input-padding-top: 12px;
+  position: relative;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -12,6 +13,26 @@
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
   background: var(--dsw-specific-input-major);
   overflow: hidden;
+
+  /* 样式包输入框背景图：被 overflow 裁进圆角，内容在它之上 */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--dslike-bg-input-box-image, none);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: var(--dslike-bg-input-box-alpha, 1);
+    filter: brightness(var(--dslike-bg-input-box-brightness, 1));
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  & > * {
+    position: relative;
+    z-index: 1;
+  }
 }
 
 .session {

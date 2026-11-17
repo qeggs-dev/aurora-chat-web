@@ -11,9 +11,36 @@
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
 
+  /* 样式包会话条目背景图：默认普通条目，选中条目在下面覆盖成 selected_session */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-image: var(--dslike-bg-normal-session-image, none);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: var(--dslike-bg-normal-session-alpha, 1);
+    filter: brightness(var(--dslike-bg-normal-session-brightness, 1));
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  & > * {
+    position: relative;
+    z-index: 1;
+  }
+
   &.active {
     background-color: var(--dsw-specific-sidebar-nav-item-active-accent);
     color: var(--dsw-alias-brand-primary-invert);
+
+    &::before {
+      background-image: var(--dslike-bg-selected-session-image, none);
+      opacity: var(--dslike-bg-selected-session-alpha, 1);
+      filter: brightness(var(--dslike-bg-selected-session-brightness, 1));
+    }
   }
 
   @media (hover: hover) {

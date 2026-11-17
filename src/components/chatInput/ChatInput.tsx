@@ -7,6 +7,8 @@ import {
   IconStopFill16,
   IconThinkOutline14,
 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { setSearch, setThinking, useSettings } from '../../services/settings.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { sendMessage, stopReply, useChatStore } from '../../services/chat/store.js'
@@ -215,7 +217,11 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               aria-pressed={thinking}
               onClick={() => setThinking(!thinking)}
             >
-              <IconThinkOutline14 />
+              <PackIcon
+                slot={STYLE_SLOTS.iconThinking}
+                size={14}
+                fallback={<IconThinkOutline14 />}
+              />
               <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
             </button>
           </Tooltip>
@@ -227,7 +233,11 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               aria-pressed={search}
               onClick={() => setSearch(!search)}
             >
-              <IconGlobeLanguageOutline14 />
+              <PackIcon
+                slot={STYLE_SLOTS.iconNetwork}
+                size={14}
+                fallback={<IconGlobeLanguageOutline14 />}
+              />
               <span className={styles.toggleLabel}>{t('search')}</span>
             </button>
           </Tooltip>
@@ -249,7 +259,13 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           <IconButton
             size="m"
             tone="primary"
-            icon={<IconPaperclipOutline16 />}
+            icon={
+              <PackIcon
+                slot={STYLE_SLOTS.iconLinkFile}
+                size={16}
+                fallback={<IconPaperclipOutline16 />}
+              />
+            }
             tooltip={t('uploadFile')}
             disabled={importingHistory}
             onClick={() => ensureApiKey() && fileInputRef.current?.click()}
@@ -275,7 +291,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
                 stopReply(sessionId)
               }}
             >
-              <IconStopFill16 />
+              <PackIcon slot={STYLE_SLOTS.iconStop} fallback={<IconStopFill16 />} />
             </button>
           ) : (
             <button
@@ -285,7 +301,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               aria-disabled={!canSend}
               onClick={send}
             >
-              <IconSendOutline16 />
+              <PackIcon slot={STYLE_SLOTS.iconSend} fallback={<IconSendOutline16 />} />
             </button>
           )}
         </div>

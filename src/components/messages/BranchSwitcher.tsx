@@ -1,4 +1,6 @@
 import { useTranslate } from '../../i18n/index.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { useRef } from 'react'
 import type { MessageVersions } from '../../services/chat/branches.js'
 import { IconChevronRightOutline14 } from '../base/icons.js'
@@ -36,7 +38,7 @@ export const BranchSwitcher = ({
       data-message-version={ids[index]}
     >
       <IconButton
-        icon={<IconChevronRightOutline14 />}
+        icon={<PackIcon slot={STYLE_SLOTS.iconLeftArrow} size={14} fallback={<IconChevronRightOutline14 />} />}
         className={styles.previous}
         aria-label={t('previousVersion')}
         disabled={disabled || index <= 0}
@@ -46,7 +48,7 @@ export const BranchSwitcher = ({
         {index + 1} / {ids.length}
       </span>
       <IconButton
-        icon={<IconChevronRightOutline14 />}
+        icon={<PackIcon slot={STYLE_SLOTS.iconRightArrow} size={14} fallback={<IconChevronRightOutline14 />} />}
         aria-label={t('nextVersion')}
         disabled={disabled || index >= ids.length - 1}
         onClick={() => select(ids[index + 1])}

@@ -2,6 +2,26 @@
   position: absolute;
   inset: 0;
   display: flex;
+
+  /* 样式包主区域背景图：铺在内容之下，不参与命中测试 */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: var(--dslike-bg-main-image, none);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: var(--dslike-bg-main-alpha, 1);
+    filter: brightness(var(--dslike-bg-main-brightness, 1));
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  & > * {
+    position: relative;
+    z-index: 1;
+  }
 }
 
 .welcome {

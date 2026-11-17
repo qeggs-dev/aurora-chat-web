@@ -34,10 +34,12 @@ import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import { StyleIcon, StyleSection } from './StyleSection.js'
 import styles from './Settings.module.css'
 
 /**
- * 设置弹窗：分「通用设置」（主题、语言、朗读音色、位置）与「数据管理」（API Key、导入、导出、删除）。
+ * 设置弹窗：分「通用设置」（主题、语言、朗读音色、位置）、「数据管理」（API Key、导入、导出、删除）、
+ * 「样式」（导入、启用、删除自定义样式包）与「关于」（非官方声明与上游许可）。
  * 桌面端为居中弹窗、左侧导航；移动端为底部弹层、导航横排在内容上方
  */
 export const SettingsDialog = () => {
@@ -52,8 +54,17 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
     icon: <IconSettingsOutline16 />,
   },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
+  { value: 'style', label: 'stylePackSectionTitle', icon: <StyleIcon /> },
   { value: 'about', label: 'aboutTitle', icon: <InfoIcon /> },
 ]
+
+/** 内容区按分组叠加背景图；样式页本身不需要背景图，只用基础内容类 */
+const contentBackgrounds: Record<SettingsSection, string> = {
+  general: styles.contentGeneric,
+  data: styles.contentDatas,
+  style: '',
+  about: styles.contentAbout,
+}
 
 const SettingsContent = () => {
   const t = useTranslate()
@@ -94,7 +105,7 @@ const SettingsContent = () => {
             </button>
           ))}
         </div>
-        <div role="tabpanel" className={styles.content}>
+        <div role="tabpanel" className={clsx(styles.content, contentBackgrounds[section])}>
           {section === 'general' ? (
             <>
               <ThemeSetting />
@@ -102,6 +113,8 @@ const SettingsContent = () => {
               <TtsVoiceSetting />
               <LocationSetting />
             </>
+          ) : section === 'style' ? (
+            <StyleSection />
           ) : section === 'about' ? (
             <AboutSection />
           ) : (

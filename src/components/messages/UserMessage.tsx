@@ -3,6 +3,8 @@ import clsx from 'clsx'
 import { memo, useLayoutEffect, useRef, useState } from 'react'
 import { useIsMobile } from '../../app/viewport.js'
 import { IconEditOutline16 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { editMessage, retryUpload } from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { UserMessage as UserMessageType } from '../../services/chat/types.js'
@@ -117,7 +119,13 @@ export const UserMessage = memo(function UserMessage({
             <div className={clsx(styles.actions, isLast && styles.alwaysShow)}>
               {message.content ? <CopyButton text={message.content} /> : null}
               <IconButton
-                icon={<IconEditOutline16 />}
+                icon={
+                  <PackIcon
+                    slot={STYLE_SLOTS.iconEdit}
+                    size={16}
+                    fallback={<IconEditOutline16 />}
+                  />
+                }
                 tooltip={t('editMessage')}
                 tooltipPlacement="bottom"
                 disabled={busy}

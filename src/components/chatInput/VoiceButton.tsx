@@ -1,6 +1,8 @@
 import clsx from 'clsx'
 import { useTranslate } from '../../i18n/index.js'
 import { IconMicFill16, IconMicOutline16 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { Tooltip } from '../base/Tooltip.js'
 import type { VoiceInputStatus } from './useVoiceInput.js'
 import styles from './VoiceButton.module.css'
@@ -60,7 +62,7 @@ export const VoiceButton = ({
               <span className={styles.halo} />
               <span className={styles.core} />
               <span className={styles.outline}>
-                <IconMicOutline16 />
+                <PackIcon slot={STYLE_SLOTS.iconSoundInput} size={16} fallback={<IconMicOutline16 />} />
               </span>
               <span className={styles.glyph}>
                 <IconMicFill16 />
@@ -69,7 +71,7 @@ export const VoiceButton = ({
           ) : status === 'transcribing' ? (
             <span className={styles.loading} />
           ) : (
-            <IconMicOutline16 />
+            <PackIcon slot={STYLE_SLOTS.iconSoundInput} size={16} fallback={<IconMicOutline16 />} />
           )}
         </button>
       </Tooltip>
