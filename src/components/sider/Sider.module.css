@@ -159,6 +159,12 @@
   user-select: none;
 }
 
+/* 有样式包背景时，分组标题不再是一条实色横带 */
+:global(html[data-style-pack]) .sectionHeader {
+  background-color: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 38%, transparent);
+  backdrop-filter: blur(10px);
+}
+
 .bottom {
   display: flex;
   flex-shrink: 0;
@@ -188,6 +194,16 @@
   &:focus-visible {
     box-shadow: inset 0 0 0 2px var(--dsw-alias-button-primary-fill);
   }
+}
+
+/* 有样式包背景时给设置入口一个半透明底，图标深浅都能看清 */
+:global(html[data-style-pack]) .settings {
+  background-color: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 55%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+:global(html[data-style-pack]) .settings:hover {
+  background-color: var(--dsw-specific-sidebar-nav-item-hover);
 }
 
 .settingsIcon {

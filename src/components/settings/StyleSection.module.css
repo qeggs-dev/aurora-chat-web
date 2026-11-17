@@ -131,6 +131,10 @@
     align-items: stretch;
   }
 
+  .headerText {
+    flex: 0 0 auto;
+  }
+
   .importButton {
     min-height: 44px;
   }
