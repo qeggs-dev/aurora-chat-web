@@ -1,5 +1,9 @@
 import { translate, type TranslationMessage } from '../../i18n/index.js'
-import { getActivePreset, type PresetConfig } from '../preset/index.js'
+import {
+  DEFAULT_PRESET_BASE_URL,
+  getActiveResolvedPreset,
+  type ResolvedPreset,
+} from '../preset/index.js'
 import { readMessageEvent } from './parseEvent.js'
 import {
   buildEndpointUrl,
@@ -41,8 +45,8 @@ import type {
 
 /** 构建期 API 地址，默认 https://api.deepseek.com；本地开发支持开发服务器代理 */
 export const API_ORIGIN = __API_ORIGIN__
-/** Anthropic 兼容接口的前缀（未启用预设时的默认端点） */
-const ANTHROPIC_BASE_URL = `${API_ORIGIN}/anthropic/v1`
+/** Anthropic 兼容接口的前缀（未启用预设时的默认端点，与默认预设解析出的 base_url 相同） */
+const ANTHROPIC_BASE_URL = DEFAULT_PRESET_BASE_URL
 /** 引用 Files API 上传的图片、调用 Anthropic 兼容 Files API 时必须携带 */
 const FILES_BETA = 'files-api-2025-04-14'
 /** DeepSeek 的 Anthropic 兼容端点挂在 /anthropic 下；预设只写域名时由这里补全 */
@@ -174,7 +178,7 @@ const warnOnce = (key: string, message: string) => {
 
 // ---------- 预设 → Profile ----------
 
-const PROTOCOL_BY_PRESET: Readonly<Record<PresetConfig['protocol'], Protocol>> = {
+const PROTOCOL_BY_PRESET: Readonly<Record<ResolvedPreset['protocol'], Protocol>> = {
   anthropic: 'anthropic-messages',
   openai: 'openai-chat',
   responses: 'openai-responses',
@@ -193,14 +197,14 @@ const isDeepseekBaseUrl = (raw: string): boolean => {
  * DeepSeek 兼容端点：只有 anthropic + DeepSeek 域名保留 Files 附件、DeepSeek 私有字段
  * （safety_check / title / 服务端工具）与 latest_reminder 角色。
  */
-const isAnthropicDeepseekPreset = (preset: PresetConfig | null): boolean =>
+const isAnthropicDeepseekPreset = (preset: ResolvedPreset | null): boolean =>
   preset !== null && preset.protocol === 'anthropic' && isDeepseekBaseUrl(preset.base_url)
 
 /** DeepSeek 的 Anthropic 兼容接口在 /anthropic 下；预设只给域名时补全，已带则原样保留 */
 const deepseekCompatBase = (baseUrl: string): string =>
   ANTHROPIC_SEGMENT.test(baseUrl) ? baseUrl : `${baseUrl.replace(/\/+$/, '')}/anthropic`
 
-const toProfile = (preset: PresetConfig, apiKey: string): ProviderProfile => ({
+const toProfile = (preset: ResolvedPreset, apiKey: string): ProviderProfile => ({
   id: preset.id,
   label: preset.name,
   protocol: PROTOCOL_BY_PRESET[preset.protocol],
@@ -211,14 +215,14 @@ const toProfile = (preset: PresetConfig, apiKey: string): ProviderProfile => ({
   ...(preset.protocol === 'anthropic' ? { reminderRole: 'system' as const } : {}),
 })
 
-const deepseekAnthropicProfile = (preset: PresetConfig, apiKey: string): ProviderProfile => ({
+const deepseekAnthropicProfile = (preset: ResolvedPreset, apiKey: string): ProviderProfile => ({
   ...toProfile(preset, apiKey),
   baseUrl: deepseekCompatBase(preset.base_url),
 })
 
 /** Files API 只在「无预设（默认 DeepSeek 兼容端点）」或「anthropic + DeepSeek」时可用 */
 export const supportsFileUpload = (): boolean => {
-  const preset = getActivePreset()
+  const preset = getActiveResolvedPreset()
   return preset === null || isAnthropicDeepseekPreset(preset)
 }
 
@@ -274,7 +278,7 @@ const toApiError = (error: unknown, protocol: Protocol): unknown => {
 
 /** 用 GET /models 校验 API Key（不产生费用）；启用预设时按预设端点与协议校验 */
 export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promise<void> => {
-  const preset = getActivePreset()
+  const preset = getActiveResolvedPreset()
   if (!preset) {
     await request(`${API_ORIGIN}/models`, {
       method: 'GET',
@@ -315,7 +319,7 @@ export const uploadFile = async (
   purpose: FilePurpose | null,
   signal?: AbortSignal
 ): Promise<FileObject> => {
-  const preset = getActivePreset()
+  const preset = getActiveResolvedPreset()
   if (preset && !isAnthropicDeepseekPreset(preset)) {
     warnOnce(
       'files',
@@ -350,7 +354,7 @@ export const uploadFile = async (
 
 /** DELETE Files API 文件；不支持 Files 的预设没有可删对象，直接跳过 */
 export const deleteFile = async (apiKey: string, fileId: string): Promise<void> => {
-  const preset = getActivePreset()
+  const preset = getActiveResolvedPreset()
   if (preset && !isAnthropicDeepseekPreset(preset)) {
     return
   }
@@ -366,33 +370,40 @@ export const deleteFile = async (apiKey: string, fileId: string): Promise<void> 
 // ---------- 旧 Anthropic 兼容路径（无预设 / DeepSeek anthropic 预设） ----------
 
 /**
- * 预设参数写进 DeepSeek Anthropic 兼容请求体：只带该协议支持的字段，
- * penalties / seed / topK 等非 Anthropic 字段不发送（避免 400）。
+ * 预设参数写进 DeepSeek Anthropic 兼容请求体：只带预设显式覆盖的字段
+ * （默认预设留空的字段不补默认值，请求体与无预设时完全一致），
+ * 且只带该协议支持的字段，penalties / seed / topK 等非 Anthropic 字段不发送（避免 400）。
  */
 const presetAnthropicBody = (
   body: CreateMessageRequest,
-  preset: PresetConfig
+  preset: ResolvedPreset
 ): Record<string, unknown> => {
-  const { params } = preset
+  const { params, overrides } = preset
   // DeepSeek 兼容端点的硬约束：客户端工具（记忆工具）与 title / safety_check /
   // 服务端工具同时出现时，请求必须处于 thinking 模式，否则返回
   // "client tools can only be used together with ... in thinking mode"。
   const hasClientTools =
     Array.isArray(body.tools) && body.tools.some((tool) => 'input_schema' in tool)
   const forceThinking = hasClientTools && body.thinking?.type !== 'enabled'
-  const wire: Record<string, unknown> = {
-    ...body,
-    model: preset.model,
-    stream: true,
-    max_tokens: params.max_tokens,
-    top_p: params.top_p,
-    ...(forceThinking ? { thinking: { type: 'enabled' as const } } : {}),
+  const wire: Record<string, unknown> = { ...body }
+  if (overrides.model) {
+    wire.model = preset.model
+  }
+  wire.stream = true
+  if (overrides.params.has('max_tokens')) {
+    wire.max_tokens = params.max_tokens
+  }
+  if (overrides.params.has('top_p')) {
+    wire.top_p = params.top_p
+  }
+  if (forceThinking) {
+    wire.thinking = { type: 'enabled' as const }
   }
   // 开启思考时部分模型拒收 temperature（与适配层一致：省略而不是置 1）
-  if (body.thinking?.type !== 'enabled' && !forceThinking) {
+  if (body.thinking?.type !== 'enabled' && !forceThinking && overrides.params.has('temperature')) {
     wire.temperature = params.temperature
   }
-  if (params.stop.length > 0) {
+  if (overrides.params.has('stop') && params.stop.length > 0) {
     wire.stop_sequences = params.stop
   }
   return wire
@@ -401,15 +412,17 @@ const presetAnthropicBody = (
 /**
  * POST Anthropic 兼容 /messages（stream: true），逐个产出流式事件，收到 message_stop 时结束。
  * ping、保活注释与无法解析的内容不产出；中止请求时抛出 signal 的 AbortError。
- * preset 为 null 时与接入预设前完全一致；非 null 时只替换端点、model 与预设参数。
+ * preset 为 null 时与接入预设前完全一致；非 null 时只替换预设显式覆盖的端点 / model 与参数。
  */
 async function* streamAnthropicCompat(
   apiKey: string,
   body: CreateMessageRequest,
   signal: AbortSignal,
-  preset: PresetConfig | null
+  preset: ResolvedPreset | null
 ): AsyncGenerator<MessageStreamEvent> {
-  const profile = preset ? deepseekAnthropicProfile(preset, apiKey) : null
+  // 预设没有覆盖 base_url 时保持默认端点 URL（默认预设留空 = 系统默认）
+  const profile =
+    preset !== null && preset.overrides.base_url ? deepseekAnthropicProfile(preset, apiKey) : null
   const url = profile ? buildEndpointUrl(profile) : `${ANTHROPIC_BASE_URL}/messages`
   const compatBody = stripSkippedFiles(body)
   const wireBody: Record<string, unknown> = preset
@@ -574,7 +587,7 @@ const isClientTool = (tool: CreateMessageRequest['tools'][number]): tool is Clie
 
 const warnDroppedDeepseekFields = (
   request: CreateMessageRequest,
-  preset: PresetConfig,
+  preset: ResolvedPreset,
   serverToolCount: number
 ) => {
   if (serverToolCount > 0 || request.safety_check || request.title?.enabled) {
@@ -586,7 +599,7 @@ const warnDroppedDeepseekFields = (
 }
 
 const warnUnsupportedParams = (
-  preset: PresetConfig,
+  preset: ResolvedPreset,
   capabilities: Capabilities,
   stop: string[]
 ) => {
@@ -611,7 +624,7 @@ const warnUnsupportedParams = (
  */
 const buildCanonicalRequest = (
   request: CreateMessageRequest,
-  preset: PresetConfig,
+  preset: ResolvedPreset,
   profile: ProviderProfile
 ): CanonicalRequest => {
   const { params } = preset
@@ -722,7 +735,7 @@ const toBlockStart = (delta: Extract<Delta, { type: 'block_start' }>): OutputBlo
  * finish 与 usage 谁后到都行：两者都齐了（或流收尾）再发 message_delta，保证 usage 不丢。
  */
 async function* streamProviderAsEvents(
-  preset: PresetConfig,
+  preset: ResolvedPreset,
   apiKey: string,
   request: CreateMessageRequest,
   signal: AbortSignal
@@ -872,8 +885,9 @@ async function* streamProviderAsEvents(
 
 /**
  * 聊天请求入口：按当前启用预设选择协议。
- * - 未启用预设：保持改动前的 DeepSeek Anthropic 兼容端点与请求体（含 title / Files 附件）。
- * - anthropic + DeepSeek 域名：同样走兼容路径，只替换预设的 base_url / model / 参数，
+ * - 未启用预设，或「默认预设 + 没有填写任何覆盖字段」：保持改动前的 DeepSeek Anthropic
+ *   兼容端点与请求体（含 title / Files 附件 / safety_check / 服务端工具），二者完全等价。
+ * - anthropic + DeepSeek 域名：同样走兼容路径，只替换预设显式覆盖的 base_url / model / 参数，
  *   保留 thinking、服务端工具、safety_check 与 Files 附件（适配层 P0 不发附件，故不经过它）。
  * - 其它（openai / responses / 官方 anthropic）：createClient(profile).stream()，
  *   请求体经 CanonicalRequest 归一，流经 Delta 还原成 MessageStreamEvent。
@@ -884,7 +898,7 @@ export async function* streamChat(
   signal: AbortSignal,
   apiKey = ''
 ): AsyncGenerator<MessageStreamEvent> {
-  const preset = getActivePreset()
+  const preset = getActiveResolvedPreset()
   if (preset === null || isAnthropicDeepseekPreset(preset)) {
     yield* streamAnthropicCompat(apiKey, request, signal, preset)
     return

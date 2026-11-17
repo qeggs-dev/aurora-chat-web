@@ -27,6 +27,7 @@ import {
 import {
   activatePreset,
   createPresetDraft,
+  DEFAULT_PRESET_NAME,
   importPresetZip,
   loadPresetConfig,
   removePreset,
@@ -35,8 +36,10 @@ import {
 } from '../../services/preset/store.js'
 import {
   DEFAULT_PRESET_COMPACTION,
+  DEFAULT_PRESET_ID,
   DEFAULT_PRESET_MEMORY,
   DEFAULT_PRESET_PARAMS,
+  isBuiltinPreset,
   PresetError,
   type PresetConfig,
   type PresetProtocol,
@@ -80,6 +83,7 @@ const presetErrorKeys: Record<string, TranslationKey> = {
   badPath: 'presetErrorBadPath',
   missingFile: 'presetErrorMissingFile',
   badFileType: 'presetErrorBadFileType',
+  reservedId: 'presetErrorReservedId',
 }
 
 /** 错误对象按当前语言展示：已知 PresetError 用错误码文案，其余带上原始 message。 */
@@ -122,11 +126,15 @@ type Draft = {
   text: TextMap
   /** 与 store 里的配置不一致（新建预设初始为 true） */
   dirty: boolean
+  /** 内置预设（默认预设 / 内置演示包）：字段留空 = 系统默认，不可删除 */
+  builtin: boolean
 }
 
 type FieldError = { key: TranslationKey; params?: TranslationParams }
 
-type FieldErrors = Partial<Record<TextField | 'base_url' | 'model', FieldError>>
+type FieldErrors = Partial<
+  Record<TextField | 'base_url' | 'model' | 'name' | 'copyright', FieldError>
+>
 
 type NumberRule = {
   min: number
@@ -182,6 +190,8 @@ const NUMERIC_FIELDS: NumericField[] = [
 const EMPTY_ERRORS: FieldErrors = {}
 
 const URL_PATTERN = /^https?:\/\/\S+$/i
+const MAX_NAME_LENGTH = 80
+const MAX_COPYRIGHT_LENGTH = 500
 
 const ruleError = (rule: NumberRule): FieldError =>
   rule.message === 'presetFieldPositiveInteger' || rule.message === 'presetFieldSeedInvalid'
@@ -211,22 +221,49 @@ const parseNumberField = (field: NumericField, raw: string): number | null | Fie
 const isFieldError = (value: number | null | FieldError): value is FieldError =>
   typeof value === 'object' && value !== null
 
-const validateDraft = (text: TextMap, config: PresetConfig): FieldErrors => {
+/**
+ * 保存前校验：普通预设的协议 / Base URL / 模型与数值字段必填；
+ * 内置默认预设（含被用户编辑后）允许协议 / Base URL / 模型与数值字段留空（= 系统默认），
+ * 但名称始终必填，已填写的字段仍按原规则校验。
+ */
+const validateDraft = (draft: Draft): FieldErrors => {
+  const { text, config, builtin } = draft
   const errors: FieldErrors = {}
   for (const field of NUMERIC_FIELDS) {
+    const rule = NUMBER_RULES[field]
+    if (builtin && !text[field].trim() && !rule.optional) {
+      continue
+    }
     const parsed = parseNumberField(field, text[field])
     if (isFieldError(parsed)) {
       errors[field] = parsed
     }
   }
-  const baseUrl = config.base_url.trim()
+  const baseUrl = (config.base_url ?? '').trim()
   if (!baseUrl) {
-    errors.base_url = { key: 'presetFieldRequired' }
+    if (!builtin) {
+      errors.base_url = { key: 'presetFieldRequired' }
+    }
   } else if (!URL_PATTERN.test(baseUrl)) {
     errors.base_url = { key: 'presetFieldUrl' }
   }
-  if (!config.model.trim()) {
+  if (!(config.model ?? '').trim() && !builtin) {
     errors.model = { key: 'presetFieldRequired' }
+  }
+  const name = config.name.trim()
+  if (!name) {
+    errors.name = { key: 'presetFieldRequired' }
+  } else if (name.length > MAX_NAME_LENGTH) {
+    errors.name = { key: 'presetFieldNameTooLong', params: { max: MAX_NAME_LENGTH } }
+  }
+  const copyright = config.copyright?.trim() ?? ''
+  if (copyright.length > MAX_COPYRIGHT_LENGTH) {
+    errors.copyright = {
+      key: 'presetCopyrightTooLong',
+      params: { max: MAX_COPYRIGHT_LENGTH },
+    }
+  } else if (copyright.includes('<') || copyright.includes('>')) {
+    errors.copyright = { key: 'presetCopyrightInvalid' }
   }
   return errors
 }
@@ -242,62 +279,230 @@ const stopFromText = (text: TextMap): string[] =>
     .map((item) => item.trim())
     .filter(Boolean)
 
-const textFromConfig = (config: PresetConfig): TextMap => ({
-  temperature: String(config.params.temperature),
-  top_p: String(config.params.top_p),
-  max_tokens: String(config.params.max_tokens),
-  stop: config.params.stop.join(', '),
-  presence_penalty: String(config.params.presence_penalty),
-  frequency_penalty: String(config.params.frequency_penalty),
-  seed: config.params.seed === null ? '' : String(config.params.seed),
-  trigger_tokens: String(config.compaction.trigger_tokens),
-  keep_recent_messages: String(config.compaction.keep_recent_messages),
-  max_results: String(config.memory.max_results),
-})
+/** 数值输入初值：内置预设未填写的字段留空（placeholder 提示「使用系统默认」） */
+const textFromConfig = (config: PresetConfig): TextMap => {
+  const params = config.params ?? {}
+  const compaction = config.compaction ?? {}
+  const memory = config.memory ?? {}
+  const numberText = (value: number | null | undefined): string =>
+    value === undefined || value === null ? '' : String(value)
+  return {
+    temperature: numberText(params.temperature),
+    top_p: numberText(params.top_p),
+    max_tokens: numberText(params.max_tokens),
+    stop: params.stop?.join(', ') ?? '',
+    presence_penalty: numberText(params.presence_penalty),
+    frequency_penalty: numberText(params.frequency_penalty),
+    seed: numberText(params.seed),
+    trigger_tokens: numberText(compaction.trigger_tokens),
+    keep_recent_messages: numberText(compaction.keep_recent_messages),
+    max_results: numberText(memory.max_results),
+  }
+}
 
 const draftFromConfig = (config: PresetConfig, dirty: boolean): Draft => ({
   config,
   text: textFromConfig(config),
   dirty,
+  builtin: isBuiltinPreset(config),
 })
 
-/** 把草稿整理成可保存的配置：数值以输入原文解析，空白提示词 / 空 stop 项归一 */
-const configFromDraft = (draft: Draft): PresetConfig => {
+/** 从输入原文读一个可选数值：留空或非法时返回 undefined（内置预设留空 = 系统默认） */
+const optionalNumberFromText = (field: NumericField, text: TextMap): number | undefined => {
+  const parsed = parseNumberField(field, text[field])
+  return typeof parsed === 'number' ? parsed : undefined
+}
+
+/**
+ * 内置默认预设的保存形态：只写入用户填写 / 修改过的字段，留空字段不落盘，
+ * 运行时由 resolvePreset 解析成系统默认（行为与无预设一致）。
+ */
+const partialConfigFromDraft = (draft: Draft): PresetConfig => {
   const { config, text } = draft
+  const next: PresetConfig = {
+    schema: 1,
+    id: config.id,
+    name: config.name.trim(),
+    ...(draft.builtin ? { builtin: true } : {}),
+  }
+  const description = config.description?.trim()
+  if (description) {
+    next.description = description
+  }
+  const author = config.author?.trim()
+  if (author) {
+    next.author = author
+  }
+  const version = config.version?.trim()
+  if (version) {
+    next.version = version
+  }
+  const copyright = config.copyright?.trim()
+  if (copyright) {
+    next.copyright = copyright
+  }
+  if (config.protocol) {
+    next.protocol = config.protocol
+  }
+  const baseUrl = (config.base_url ?? '').trim().replace(/\/+$/, '')
+  if (baseUrl) {
+    next.base_url = baseUrl
+  }
+  const model = (config.model ?? '').trim()
+  if (model) {
+    next.model = model
+  }
+  const params: NonNullable<PresetConfig['params']> = {}
+  const temperature = optionalNumberFromText('temperature', text)
+  if (temperature !== undefined) {
+    params.temperature = temperature
+  }
+  const topP = optionalNumberFromText('top_p', text)
+  if (topP !== undefined) {
+    params.top_p = topP
+  }
+  const maxTokens = optionalNumberFromText('max_tokens', text)
+  if (maxTokens !== undefined) {
+    params.max_tokens = maxTokens
+  }
+  const presencePenalty = optionalNumberFromText('presence_penalty', text)
+  if (presencePenalty !== undefined) {
+    params.presence_penalty = presencePenalty
+  }
+  const frequencyPenalty = optionalNumberFromText('frequency_penalty', text)
+  if (frequencyPenalty !== undefined) {
+    params.frequency_penalty = frequencyPenalty
+  }
+  const seed = optionalNumberFromText('seed', text)
+  if (seed !== undefined) {
+    params.seed = seed
+  }
+  if (text.stop.trim()) {
+    params.stop = stopFromText(text)
+  }
+  const reasoningEffort = config.params?.reasoning_effort
+  if (reasoningEffort) {
+    params.reasoning_effort = reasoningEffort
+  }
+  if (Object.keys(params).length > 0) {
+    next.params = params
+  }
+  const prompt = config.system_prompt
+  if (prompt?.trim()) {
+    next.system_prompt = prompt
+  }
+  const compaction: NonNullable<PresetConfig['compaction']> = {}
+  if (config.compaction?.enabled !== undefined) {
+    compaction.enabled = config.compaction.enabled
+  }
+  const triggerTokens = optionalNumberFromText('trigger_tokens', text)
+  if (triggerTokens !== undefined) {
+    compaction.trigger_tokens = triggerTokens
+  }
+  const keepRecent = optionalNumberFromText('keep_recent_messages', text)
+  if (keepRecent !== undefined) {
+    compaction.keep_recent_messages = keepRecent
+  }
+  const compactionPrompt = config.compaction?.prompt
+  if (compactionPrompt?.trim()) {
+    compaction.prompt = compactionPrompt
+  }
+  if (Object.keys(compaction).length > 0) {
+    next.compaction = compaction
+  }
+  const memory: NonNullable<PresetConfig['memory']> = {}
+  if (config.memory?.enabled !== undefined) {
+    memory.enabled = config.memory.enabled
+  }
+  const maxResults = optionalNumberFromText('max_results', text)
+  if (maxResults !== undefined) {
+    memory.max_results = maxResults
+  }
+  if (Object.keys(memory).length > 0) {
+    next.memory = memory
+  }
+  return next
+}
+
+/** 普通预设的保存形态：完整配置，协议 / Base URL / 模型与数值字段必填（与 zip 校验一致） */
+const strictConfigFromDraft = (draft: Draft): PresetConfig => {
+  const { config, text } = draft
+  const params = config.params ?? {}
+  const compaction = config.compaction ?? {}
+  const memory = config.memory ?? {}
   const seed = parseNumberField('seed', text.seed)
-  const prompt = config.system_prompt?.trim()
-  const compactionPrompt = config.compaction.prompt?.trim()
+  const prompt = config.system_prompt
+  const compactionPrompt = compaction.prompt
   return {
-    ...config,
-    base_url: config.base_url.trim().replace(/\/+$/, ''),
-    model: config.model.trim(),
-    system_prompt: prompt ? config.system_prompt : undefined,
+    schema: 1,
+    id: config.id,
+    name: config.name.trim(),
+    description: config.description,
+    author: config.author,
+    version: config.version,
+    copyright: config.copyright,
+    protocol: config.protocol ?? 'anthropic',
+    base_url: (config.base_url ?? '').trim().replace(/\/+$/, ''),
+    model: (config.model ?? '').trim(),
+    system_prompt: prompt?.trim() ? prompt : undefined,
     params: {
-      ...config.params,
-      temperature: numberFromText('temperature', text, config.params.temperature),
-      top_p: numberFromText('top_p', text, config.params.top_p),
-      max_tokens: numberFromText('max_tokens', text, config.params.max_tokens),
+      temperature: numberFromText(
+        'temperature',
+        text,
+        params.temperature ?? DEFAULT_PRESET_PARAMS.temperature
+      ),
+      top_p: numberFromText('top_p', text, params.top_p ?? DEFAULT_PRESET_PARAMS.top_p),
+      max_tokens: numberFromText(
+        'max_tokens',
+        text,
+        params.max_tokens ?? DEFAULT_PRESET_PARAMS.max_tokens
+      ),
       stop: stopFromText(text),
-      presence_penalty: numberFromText('presence_penalty', text, config.params.presence_penalty),
-      frequency_penalty: numberFromText('frequency_penalty', text, config.params.frequency_penalty),
+      presence_penalty: numberFromText(
+        'presence_penalty',
+        text,
+        params.presence_penalty ?? DEFAULT_PRESET_PARAMS.presence_penalty
+      ),
+      frequency_penalty: numberFromText(
+        'frequency_penalty',
+        text,
+        params.frequency_penalty ?? DEFAULT_PRESET_PARAMS.frequency_penalty
+      ),
       seed: typeof seed === 'number' ? seed : null,
+      reasoning_effort: params.reasoning_effort ?? null,
     },
     compaction: {
-      ...config.compaction,
-      trigger_tokens: numberFromText('trigger_tokens', text, config.compaction.trigger_tokens),
+      enabled: compaction.enabled ?? DEFAULT_PRESET_COMPACTION.enabled,
+      trigger_tokens: numberFromText(
+        'trigger_tokens',
+        text,
+        compaction.trigger_tokens ?? DEFAULT_PRESET_COMPACTION.trigger_tokens
+      ),
       keep_recent_messages: numberFromText(
         'keep_recent_messages',
         text,
-        config.compaction.keep_recent_messages
+        compaction.keep_recent_messages ?? DEFAULT_PRESET_COMPACTION.keep_recent_messages
       ),
-      prompt: compactionPrompt ? config.compaction.prompt : null,
+      prompt: compactionPrompt?.trim() ? compactionPrompt : null,
     },
     memory: {
-      ...config.memory,
-      max_results: numberFromText('max_results', text, config.memory.max_results),
+      enabled: memory.enabled ?? DEFAULT_PRESET_MEMORY.enabled,
+      max_results: numberFromText(
+        'max_results',
+        text,
+        memory.max_results ?? DEFAULT_PRESET_MEMORY.max_results
+      ),
     },
+    ...(config.system_prompt_file ? { system_prompt_file: config.system_prompt_file } : {}),
+    ...(config.icon ? { icon: config.icon } : {}),
+    ...(config.license ? { license: config.license } : {}),
+    ...(config.builtin ? { builtin: true } : {}),
   }
 }
+
+/** 把草稿整理成可保存的配置：内置默认预设只落填写过的字段，普通预设保持完整必填配置 */
+const configFromDraft = (draft: Draft): PresetConfig =>
+  draft.builtin ? partialConfigFromDraft(draft) : strictConfigFromDraft(draft)
 
 /** 新建预设：id 按 createPresetDraft 的规则生成，名字换成界面上的默认名 */
 const createNewPresetConfig = (name: string): PresetConfig => {
@@ -307,23 +512,31 @@ const createNewPresetConfig = (name: string): PresetConfig => {
 }
 
 /** 读不到完整配置时，用列表摘要拼一份基础配置，至少能继续编辑与保存 */
-const summaryConfig = (summary: PresetSummary): PresetConfig => ({
-  schema: 1,
-  id: summary.id,
-  name: summary.name,
-  description: summary.description,
-  author: summary.author,
-  version: summary.version,
-  protocol: summary.protocol,
-  base_url: summary.baseUrl,
-  model: summary.model,
-  params: { ...DEFAULT_PRESET_PARAMS, stop: [] },
-  compaction: { ...DEFAULT_PRESET_COMPACTION },
-  memory: { ...DEFAULT_PRESET_MEMORY },
-})
+const summaryConfig = (summary: PresetSummary): PresetConfig =>
+  summary.builtin === true || summary.id === DEFAULT_PRESET_ID
+    ? { schema: 1, id: summary.id, name: summary.name, builtin: true }
+    : {
+        schema: 1,
+        id: summary.id,
+        name: summary.name,
+        description: summary.description,
+        author: summary.author,
+        version: summary.version,
+        copyright: summary.copyright,
+        protocol: summary.protocol,
+        base_url: summary.baseUrl,
+        model: summary.model,
+        params: { ...DEFAULT_PRESET_PARAMS, stop: [] },
+        compaction: { ...DEFAULT_PRESET_COMPACTION },
+        memory: { ...DEFAULT_PRESET_MEMORY },
+      }
 
 const formatMemoryTime = (timestamp: number): string =>
   Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : ''
+
+/** 列表 / 标签上的「作者 · 版本」摘要；两者都没有时为空串 */
+const presetMeta = (config: { author?: string; version?: string }): string =>
+  [config.author?.trim(), config.version?.trim()].filter(Boolean).join(' · ')
 
 /** 不可变地移除一条记录（避免 delete 动态键） */
 const withoutKey = <T,>(record: Record<string, T>, key: string): Record<string, T> =>
@@ -337,9 +550,10 @@ const MEMORY_SECTION_KEYS: Record<string, TranslationKey> = {
   [MEMORY_SECTIONS.todo]: 'presetMemorySectionTodo',
 }
 
-type SubTab = 'api' | 'params' | 'prompt' | 'memory' | 'compaction'
+type SubTab = 'basic' | 'api' | 'params' | 'prompt' | 'memory' | 'compaction'
 
 const SUB_TABS: { value: SubTab; label: TranslationKey }[] = [
+  { value: 'basic', label: 'presetSubtabBasic' },
   { value: 'api', label: 'presetSubtabApi' },
   { value: 'params', label: 'presetSubtabParams' },
   { value: 'prompt', label: 'presetSubtabPrompt' },
@@ -459,6 +673,7 @@ const NumberField = ({
         min={rule.optional ? undefined : rule.min}
         max={rule.optional ? undefined : rule.max}
         value={draft.text[field]}
+        placeholder={draft.builtin ? t('presetUseSystemDefault') : undefined}
         aria-invalid={error ? true : undefined}
         onChange={(event) => api.setText(field, event.target.value)}
       />
@@ -488,6 +703,7 @@ export const PresetSection = () => {
     id: string
     name: string
     stored: boolean
+    builtin: boolean
   } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -575,12 +791,24 @@ export const PresetSection = () => {
     }
   }, [selectedId])
 
+  /** 默认预设的内置名按界面语言显示；用户改名后显示改名后的名称 */
+  const presetName = (id: string, name: string, builtin: boolean): string => {
+    const trimmed = name.trim()
+    return builtin && id === DEFAULT_PRESET_ID && (!trimmed || trimmed === DEFAULT_PRESET_NAME)
+      ? t('presetDefaultName')
+      : name
+  }
+
   const tabItems = [
     ...presets.map((preset) => {
       const draft = drafts[preset.id]
+      const config = draft?.config ?? preset
+      const builtin = draft?.builtin ?? (preset.builtin === true || preset.id === DEFAULT_PRESET_ID)
       return {
         id: preset.id,
-        name: draft?.config.name ?? preset.name,
+        name: presetName(preset.id, config.name, builtin),
+        meta: presetMeta(config),
+        builtin,
         dirty: draft?.dirty ?? false,
         stored: true,
       }
@@ -592,6 +820,8 @@ export const PresetSection = () => {
         return {
           id,
           name: draft?.config.name ?? t('presetNewDefaultName'),
+          meta: draft ? presetMeta(draft.config) : '',
+          builtin: draft?.builtin ?? false,
           dirty: draft?.dirty ?? false,
           stored: false,
         }
@@ -599,11 +829,10 @@ export const PresetSection = () => {
   ]
   const selected = selectedId ? (drafts[selectedId] ?? null) : null
   const selectedStored = selectedId !== null && presets.some((preset) => preset.id === selectedId)
+  const selectedBuiltin = selected?.builtin ?? false
   const isActive = selectedId !== null && selectedId === activeId
   const errors =
-    selected && selectedId && showErrors[selectedId]
-      ? validateDraft(selected.text, selected.config)
-      : EMPTY_ERRORS
+    selected && selectedId && showErrors[selectedId] ? validateDraft(selected) : EMPTY_ERRORS
   const storeErrorStatus: Status =
     error === null
       ? null
@@ -678,7 +907,7 @@ export const PresetSection = () => {
     if (!draft) {
       return
     }
-    const issues = validateDraft(draft.text, draft.config)
+    const issues = validateDraft(draft)
     setShowErrors((prev) => ({ ...prev, [id]: true }))
     if (Object.keys(issues).length > 0) {
       setSaveStatus({ key: 'presetValidationFailed', error: true })
@@ -758,6 +987,11 @@ export const PresetSection = () => {
       return
     }
     const target = deleteTarget
+    // 内置预设不可删除：按钮已禁用，这里再兜底
+    if (target.builtin) {
+      setDeleteTarget(null)
+      return
+    }
     setDeleting(true)
     try {
       if (target.stored) {
@@ -842,6 +1076,7 @@ export const PresetSection = () => {
                     type="button"
                     role="tab"
                     aria-selected={tab.id === selectedId}
+                    title={`id: ${tab.id}`}
                     className={clsx(styles.tab, tab.id === selectedId && styles.tabSelected)}
                     ref={(node) => {
                       if (node) {
@@ -853,6 +1088,10 @@ export const PresetSection = () => {
                     onClick={() => selectTab(tab.id)}
                   >
                     <span className={styles.tabName}>{tab.name}</span>
+                    {tab.meta ? <span className={styles.tabMeta}>{tab.meta}</span> : null}
+                    {tab.builtin ? (
+                      <span className={styles.tabBadge}>{t('presetBuiltinBadge')}</span>
+                    ) : null}
                     {tab.id === activeId ? (
                       <span className={styles.tabBadge}>{t('presetActive')}</span>
                     ) : null}
@@ -920,12 +1159,14 @@ export const PresetSection = () => {
                   <Button
                     variant="dangerOutlined"
                     size="m"
-                    disabled={saving || deleting}
+                    disabled={saving || deleting || selectedBuiltin}
+                    title={selectedBuiltin ? t('presetBuiltinUndeletable') : undefined}
                     onClick={() =>
                       setDeleteTarget({
                         id: selectedId,
                         name: selected.config.name,
                         stored: selectedStored,
+                        builtin: selectedBuiltin,
                       })
                     }
                   >
@@ -989,10 +1230,10 @@ export const PresetSection = () => {
   )
 }
 
-/** 编辑区：5 个子标签共用一个草稿，切换预设时子标签位置保持不变 */
+/** 编辑区：6 个子标签共用一个草稿，切换预设时子标签位置保持不变 */
 const DraftEditor = ({ draft, api }: PanelProps) => {
   const t = useTranslate()
-  const [tab, setTab] = useState<SubTab>('api')
+  const [tab, setTab] = useState<SubTab>('basic')
   const id = useId()
   return (
     <div className={styles.editor}>
@@ -1018,6 +1259,7 @@ const DraftEditor = ({ draft, api }: PanelProps) => {
         aria-labelledby={`${id}-tab-${tab}`}
         className={styles.editorPanel}
       >
+        {tab === 'basic' ? <BasicPanel draft={draft} api={api} /> : null}
         {tab === 'api' ? <ApiPanel draft={draft} api={api} /> : null}
         {tab === 'params' ? <ParamsPanel draft={draft} api={api} /> : null}
         {tab === 'prompt' ? <PromptPanel draft={draft} api={api} /> : null}
@@ -1028,26 +1270,139 @@ const DraftEditor = ({ draft, api }: PanelProps) => {
   )
 }
 
+/**
+ * 基本信息：名称（可改、允许重名）、描述、作者、版本、版权声明与只读 ID。
+ * id 是系统识别用的唯一标识（类似包名），创建后不可修改；name 只用于展示。
+ */
+const BasicPanel = ({ draft, api }: PanelProps) => {
+  const t = useTranslate()
+  const id = useId()
+  const { config, builtin } = draft
+  const nameError = api.errors.name
+  const copyrightError = api.errors.copyright
+  const optionalPlaceholder = builtin ? t('presetUseSystemDefault') : t('presetOptional')
+  return (
+    <div className={styles.panelBody}>
+      {builtin ? (
+        <div className={styles.note}>
+          {t('presetBuiltinBadge')} · {t('presetBuiltinUndeletable')}
+        </div>
+      ) : null}
+      <Field
+        label={`${t('presetFieldName')} *`}
+        htmlFor={`${id}-name`}
+        error={nameError ? t(nameError.key, nameError.params) : undefined}
+      >
+        <input
+          id={`${id}-name`}
+          className={clsx(styles.input, nameError && styles.inputInvalid)}
+          value={config.name}
+          aria-invalid={nameError ? true : undefined}
+          onChange={(event) =>
+            api.setConfig((current) => ({ ...current, name: event.target.value }))
+          }
+        />
+      </Field>
+      <div className={styles.note}>{t('presetMetadataHint')}</div>
+      <Field label={t('presetFieldDescription')} htmlFor={`${id}-description`}>
+        <textarea
+          id={`${id}-description`}
+          className={styles.textarea}
+          rows={2}
+          value={config.description ?? ''}
+          placeholder={optionalPlaceholder}
+          onChange={(event) =>
+            api.setConfig((current) => ({ ...current, description: event.target.value }))
+          }
+        />
+      </Field>
+      <div className={styles.grid}>
+        <Field label={t('presetFieldAuthor')} htmlFor={`${id}-author`}>
+          <input
+            id={`${id}-author`}
+            className={styles.input}
+            value={config.author ?? ''}
+            placeholder={optionalPlaceholder}
+            onChange={(event) =>
+              api.setConfig((current) => ({ ...current, author: event.target.value }))
+            }
+          />
+        </Field>
+        <Field label={t('presetFieldVersion')} htmlFor={`${id}-version`}>
+          <input
+            id={`${id}-version`}
+            className={styles.input}
+            value={config.version ?? ''}
+            placeholder={optionalPlaceholder}
+            onChange={(event) =>
+              api.setConfig((current) => ({ ...current, version: event.target.value }))
+            }
+          />
+        </Field>
+      </div>
+      <Field
+        label={t('presetFieldCopyright')}
+        htmlFor={`${id}-copyright`}
+        error={copyrightError ? t(copyrightError.key, copyrightError.params) : undefined}
+        hint={t('presetCopyrightHint')}
+      >
+        <textarea
+          id={`${id}-copyright`}
+          className={clsx(styles.textarea, copyrightError && styles.inputInvalid)}
+          rows={3}
+          value={config.copyright ?? ''}
+          placeholder={
+            builtin ? t('presetUseSystemDefault') : t('presetCopyrightPlaceholder')
+          }
+          aria-invalid={copyrightError ? true : undefined}
+          onChange={(event) =>
+            api.setConfig((current) => ({ ...current, copyright: event.target.value }))
+          }
+        />
+      </Field>
+      <Field label={t('presetFieldId')} htmlFor={`${id}-id`} hint={t('presetIdReadonly')}>
+        <input
+          id={`${id}-id`}
+          className={styles.input}
+          value={config.id}
+          readOnly
+          spellCheck={false}
+        />
+      </Field>
+    </div>
+  )
+}
+
 /** API 设置：协议、地址、模型；API Key 属于全局设置，不放进预设 */
 const ApiPanel = ({ draft, api }: PanelProps) => {
   const t = useTranslate()
   const id = useId()
-  const { config } = draft
+  const { config, builtin } = draft
   const baseUrlError = api.errors.base_url
   const modelError = api.errors.model
+  const protocolOptions: SelectOption<string>[] = builtin
+    ? [{ value: '', label: t('presetUseSystemDefault') }, ...PROTOCOL_OPTIONS]
+    : PROTOCOL_OPTIONS
   return (
     <div className={styles.panelBody}>
-      <Field label={t('presetFieldProtocol')}>
+      {builtin ? <div className={styles.note}>{t('presetDefaultFieldsHint')}</div> : null}
+      <Field label={`${t('presetFieldProtocol')} *`}>
         <Select
           ariaLabel={t('presetFieldProtocol')}
           className={styles.select}
-          value={config.protocol}
-          options={PROTOCOL_OPTIONS}
-          onChange={(protocol) => api.setConfig((current) => ({ ...current, protocol }))}
+          value={config.protocol ?? ''}
+          placeholder={t('presetUseSystemDefault')}
+          options={protocolOptions}
+          onChange={(protocol) =>
+            api.setConfig((current) => ({
+              ...current,
+              protocol: protocol === '' ? undefined : (protocol as PresetProtocol),
+            }))
+          }
         />
       </Field>
       <Field
-        label={t('presetFieldBaseUrl')}
+        label={`${t('presetFieldBaseUrl')} *`}
         htmlFor={`${id}-base-url`}
         error={baseUrlError ? t(baseUrlError.key, baseUrlError.params) : undefined}
       >
@@ -1057,7 +1412,8 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
           type="url"
           inputMode="url"
           spellCheck={false}
-          value={config.base_url}
+          value={config.base_url ?? ''}
+          placeholder={builtin ? t('presetUseSystemDefault') : undefined}
           aria-invalid={baseUrlError ? true : undefined}
           onChange={(event) =>
             api.setConfig((current) => ({ ...current, base_url: event.target.value }))
@@ -1065,7 +1421,7 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
         />
       </Field>
       <Field
-        label={t('presetFieldModel')}
+        label={`${t('presetFieldModel')} *`}
         htmlFor={`${id}-model`}
         error={modelError ? t(modelError.key, modelError.params) : undefined}
       >
@@ -1073,7 +1429,8 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
           id={`${id}-model`}
           className={clsx(styles.input, modelError && styles.inputInvalid)}
           spellCheck={false}
-          value={config.model}
+          value={config.model ?? ''}
+          placeholder={builtin ? t('presetUseSystemDefault') : undefined}
           aria-invalid={modelError ? true : undefined}
           onChange={(event) =>
             api.setConfig((current) => ({ ...current, model: event.target.value }))
@@ -1131,7 +1488,7 @@ const ParamsPanel = ({ draft, api }: PanelProps) => {
         <Select
           ariaLabel={t('presetFieldReasoningEffort')}
           className={styles.select}
-          value={draft.config.params.reasoning_effort ?? ''}
+          value={draft.config.params?.reasoning_effort ?? ''}
           options={reasoningOptions}
           onChange={(value) =>
             api.setConfig((current) => ({
@@ -1164,6 +1521,7 @@ const PromptPanel = ({ draft, api }: PanelProps) => {
           rows={10}
           spellCheck={false}
           value={prompt}
+          placeholder={draft.builtin ? t('presetUseSystemDefault') : undefined}
           onChange={(event) =>
             api.setConfig((current) => ({ ...current, system_prompt: event.target.value }))
           }
@@ -1246,7 +1604,7 @@ const MemoryPanel = ({ draft, api }: PanelProps) => {
     <div className={styles.panelBody}>
       <SwitchField
         label={t('presetMemoryEnabled')}
-        checked={draft.config.memory.enabled}
+        checked={draft.config.memory?.enabled ?? DEFAULT_PRESET_MEMORY.enabled}
         onChange={(enabled) =>
           api.setConfig((current) => ({
             ...current,
@@ -1344,7 +1702,7 @@ const CompactionPanel = ({ draft, api }: PanelProps) => {
     <div className={styles.panelBody}>
       <SwitchField
         label={t('presetCompactionEnabled')}
-        checked={config.compaction.enabled}
+        checked={config.compaction?.enabled ?? DEFAULT_PRESET_COMPACTION.enabled}
         onChange={(enabled) =>
           api.setConfig((current) => ({
             ...current,
@@ -1376,7 +1734,8 @@ const CompactionPanel = ({ draft, api }: PanelProps) => {
           className={styles.textarea}
           rows={6}
           spellCheck={false}
-          value={config.compaction.prompt ?? ''}
+          value={config.compaction?.prompt ?? ''}
+          placeholder={draft.builtin ? t('presetUseSystemDefault') : undefined}
           onChange={(event) =>
             api.setConfig((current) => ({
               ...current,

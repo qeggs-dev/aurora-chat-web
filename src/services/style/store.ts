@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react'
 import { create } from 'zustand'
 import { useSettings, type ThemePreference } from '../settings.js'
 import { applyStyleVars, type ActiveStyle } from './apply.js'
+import { createEffectsImageUrl, needsCanvasProcessing, pruneEffectsCache } from './effects.js'
 import {
   deleteStoredStylePack,
   getStoredStylePack,
@@ -11,7 +12,13 @@ import {
   summarize,
 } from './db.js'
 import { parseStylePackZip, StylePackError } from './zip.js'
-import { slotId, type StyleAssetEntry, type StylePackSummary, type Theme } from './types.js'
+import {
+  slotId,
+  STYLE_PREFIX,
+  type StyleAssetEntry,
+  type StylePackSummary,
+  type Theme,
+} from './types.js'
 
 export type StylePackState = {
   ready: boolean
@@ -81,6 +88,27 @@ let summaryUrls: { icons: Map<string, string>; covers: Map<string, string> } = {
   covers: new Map(),
 }
 
+/** 当前列表摘要里仍在使用的 objectURL（派生图缓存按它判断哪些还能留） */
+const summarySourceUrls = (): Set<string> => {
+  const keep = new Set<string>()
+  for (const url of summaryUrls.icons.values()) {
+    keep.add(url)
+  }
+  for (const url of summaryUrls.covers.values()) {
+    keep.add(url)
+  }
+  return keep
+}
+
+/** 保留「当前启用包 + 列表摘要」仍引用的原图 URL，其余派生图全部 revoke */
+const pruneEffects = (activeUrlsToKeep: Iterable<string>): void => {
+  const keep = summarySourceUrls()
+  for (const url of activeUrlsToKeep) {
+    keep.add(url)
+  }
+  pruneEffectsCache(keep)
+}
+
 const refreshPacks = async (): Promise<void> => {
   const stored = await listStoredStylePacks()
   // 先建好新 URL 再释放旧的，避免列表在渲染间隙引用已释放的地址
@@ -103,6 +131,18 @@ const refreshPacks = async (): Promise<void> => {
   summaryUrls = { icons: nextIcons, covers: nextCovers }
   packs.sort((a, b) => b.importedAt - a.importedAt)
   set({ packs })
+  const active = get().active
+  const activeKeep: string[] = []
+  if (active) {
+    activeKeep.push(...Object.values(active.urls))
+    if (active.iconUrl) {
+      activeKeep.push(active.iconUrl)
+    }
+    if (active.coverUrl) {
+      activeKeep.push(active.coverUrl)
+    }
+  }
+  pruneEffects(activeKeep)
   for (const url of previous.icons.values()) {
     URL.revokeObjectURL(url)
   }
@@ -128,6 +168,7 @@ export const activateStylePack = async (id: string | null): Promise<void> => {
     activeUrls = []
     set({ activeId: null, active: null })
     writeActiveId(null)
+    pruneEffects([])
     await applyStyleVars(null, resolveTheme())
     for (const url of previous) {
       URL.revokeObjectURL(url)
@@ -141,6 +182,32 @@ export const activateStylePack = async (id: string | null): Promise<void> => {
     const url = URL.createObjectURL(blob)
     urls[assetId] = url
     created.push(url)
+  }
+  // 背景的 window / zoom 需要 canvas 派生图；静态特效与 tilt 在导入时已从背景清单里移除
+  for (const [assetId, url] of Object.entries(urls)) {
+    const asset = pack.manifest.assets[assetId]
+    const effects = asset?.effects
+    if (
+      !assetId.startsWith(`${STYLE_PREFIX}.background.`) ||
+      !effects ||
+      !needsCanvasProcessing(effects)
+    ) {
+      continue
+    }
+    const derivedUrl = await createEffectsImageUrl(url, effects)
+    if (sequence !== activationSequence) {
+      for (const createdUrl of created) {
+        URL.revokeObjectURL(createdUrl)
+      }
+      if (derivedUrl) {
+        URL.revokeObjectURL(derivedUrl)
+      }
+      return
+    }
+    if (derivedUrl) {
+      urls[assetId] = derivedUrl
+      created.push(derivedUrl)
+    }
   }
   let iconUrl: string | undefined
   if (pack.icon) {
@@ -165,6 +232,7 @@ export const activateStylePack = async (id: string | null): Promise<void> => {
   }
   set({ activeId: pack.id, active })
   writeActiveId(pack.id)
+  pruneEffects(created)
   await applyStyleVars(active, resolveTheme())
   for (const url of previous) {
     URL.revokeObjectURL(url)
@@ -255,7 +323,7 @@ export const initStylePacks = (): Promise<void> =>
 export const useStylePackState = (): StylePackState => useStylePackStore()
 
 /** 当前主题下某个槽位的 objectURL 与清单元数据（图标插值方式等） */
-export type StyleAssetState = { url: string; meta?: StyleAssetEntry }
+export type StyleAssetState = { assetId: string; url: string; meta?: StyleAssetEntry }
 
 export const useStyleAsset = (slot: string): StyleAssetState | undefined => {
   const preference = useSettings((state) => state.themePreference)
@@ -263,7 +331,7 @@ export const useStyleAsset = (slot: string): StyleAssetState | undefined => {
   const active = useStylePackStore((state) => state.active)
   const assetId = slotId(slot, resolveTheme(preference, osTheme))
   const url = active?.urls[assetId]
-  return url ? { url, meta: active?.manifest.assets[assetId] } : undefined
+  return url ? { assetId, url, meta: active?.manifest.assets[assetId] } : undefined
 }
 
 /** 当前主题下某个槽位的 objectURL（完整 ID 由 slotId 拼出） */

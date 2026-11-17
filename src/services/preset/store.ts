@@ -6,16 +6,21 @@ import {
   listStoredPresets,
   putStoredPreset,
   summarize,
+  type StoredPreset,
 } from './db.js'
 import {
   DEFAULT_PRESET_COMPACTION,
+  DEFAULT_PRESET_ID,
   DEFAULT_PRESET_MEMORY,
   DEFAULT_PRESET_PARAMS,
+  isSystemDefaultPreset,
   PresetError,
+  resolvePreset,
   type PresetConfig,
   type PresetSummary,
+  type ResolvedPreset,
 } from './types.js'
-import { parsePresetConfig, parsePresetZip } from './zip.js'
+import { parsePresetConfigForSave, parsePresetZip } from './zip.js'
 
 export type PresetState = {
   ready: boolean
@@ -27,6 +32,9 @@ export type PresetState = {
   /** 最近一次导入 / 保存失败的错误码（PresetErrorCode，未知错误为 importFailed / saveFailed） */
   error: string | null
 }
+
+/** 内置默认预设的展示名（记录里也用它初始化；用户改名后以存储值为准） */
+export const DEFAULT_PRESET_NAME = '默认配置'
 
 const ACTIVE_KEY = 'chat-demo:preset'
 
@@ -82,7 +90,12 @@ const refreshPresets = async (): Promise<void> => {
     }
     return summarize(preset, iconUrl)
   })
-  presets.sort((a, b) => b.importedAt - a.importedAt)
+  // 内置默认预设固定第一个显示，其余按导入时间倒序
+  presets.sort((a, b) => {
+    const aDefault = a.id === DEFAULT_PRESET_ID ? 1 : 0
+    const bDefault = b.id === DEFAULT_PRESET_ID ? 1 : 0
+    return aDefault === bDefault ? b.importedAt - a.importedAt : bDefault - aDefault
+  })
   set({ presets })
 }
 
@@ -113,11 +126,54 @@ export const activatePreset = async (id: string | null): Promise<void> => {
 const errorCode = (error: unknown, fallback: string): string =>
   error instanceof PresetError ? error.code : fallback
 
+/** 内置默认预设的最简存储记录：只含 schema / id / name / builtin，其余字段运行时取系统默认 */
+const defaultPresetRecord = (): StoredPreset => ({
+  id: DEFAULT_PRESET_ID,
+  config: {
+    schema: 1,
+    id: DEFAULT_PRESET_ID,
+    name: DEFAULT_PRESET_NAME,
+    builtin: true,
+  },
+  importedAt: Date.now(),
+  builtin: true,
+})
+
+/** 确保内置默认预设存在（幂等）：缺失时写入最小记录，旧记录缺 builtin 标记时补上 */
+const ensureDefaultPreset = async (): Promise<void> => {
+  const stored = await getStoredPreset(DEFAULT_PRESET_ID)
+  if (!stored) {
+    await putStoredPreset(defaultPresetRecord())
+    return
+  }
+  if (stored.builtin === true && stored.config.builtin === true && stored.config.name.trim()) {
+    return
+  }
+  await putStoredPreset({
+    ...stored,
+    config: {
+      ...stored.config,
+      id: DEFAULT_PRESET_ID,
+      name: stored.config.name.trim() || DEFAULT_PRESET_NAME,
+      builtin: true,
+    },
+    builtin: true,
+  })
+}
+
 /** 导入 preset zip；同 id 覆盖，当前没有启用项时自动启用 */
 export const importPresetZip = async (file: File): Promise<void> => {
   set({ importing: true, error: null })
   try {
     const parsed = await parsePresetZip(file)
+    // 内置预设的 id 保留给内置记录：默认预设不能被同 id 的 zip 覆盖
+    if (parsed.config.id === DEFAULT_PRESET_ID) {
+      throw new PresetError('reservedId', parsed.config.id)
+    }
+    const previous = await getStoredPreset(parsed.config.id)
+    if (previous?.builtin) {
+      throw new PresetError('reservedId', parsed.config.id)
+    }
     await putStoredPreset({
       id: parsed.config.id,
       config: parsed.config,
@@ -138,15 +194,21 @@ export const importPresetZip = async (file: File): Promise<void> => {
 }
 
 /**
- * 保存手写的配置 JSON；规则与 zip 清单校验完全一致，同 id 覆盖，无启用项时自动启用。
+ * 保存手写的配置 JSON；普通预设的规则与 zip 清单校验完全一致，同 id 覆盖，无启用项时自动启用。
+ * 内置默认预设走独立的部分字段解析：允许只含 schema / id / name，留空字段表示使用系统默认。
  * icon / license / system_prompt_file 的内容只能来自 zip：编辑已有预设时沿用旧记录里的文件，
  * 引用一个本机没有内容的文件按 missingFile 失败。
  */
 export const savePresetJson = async (text: string): Promise<void> => {
   set({ importing: true, error: null })
   try {
-    const config = parsePresetConfig(text)
+    const config = parsePresetConfigForSave(text)
+    const isDefault = config.id === DEFAULT_PRESET_ID
     const previous = await getStoredPreset(config.id)
+    // 内置演示包的配置可以被编辑，但普通预设不能占用它的 id
+    if (previous?.builtin && !isDefault) {
+      throw new PresetError('reservedId', config.id)
+    }
     const icon = config.icon ? previous?.icon : undefined
     const license = config.license ? previous?.license : undefined
     // 编辑器回填的是已解析的 system_prompt，允许用它改写旧的文件内容；否则沿用旧文件内容
@@ -162,13 +224,18 @@ export const savePresetJson = async (text: string): Promise<void> => {
     if (config.system_prompt_file && promptText === undefined) {
       throw new PresetError('missingFile', config.system_prompt_file)
     }
+    const storedConfig: PresetConfig =
+      isDefault || previous?.builtin === true
+        ? { ...config, builtin: true }
+        : config
     await putStoredPreset({
-      id: config.id,
-      config,
+      id: storedConfig.id,
+      config: storedConfig,
       icon,
       license,
       promptText,
-      importedAt: Date.now(),
+      importedAt: isDefault ? (previous?.importedAt ?? Date.now()) : Date.now(),
+      ...(previous?.builtin === true || isDefault ? { builtin: true } : {}),
     })
     await refreshPresets()
     if (!get().activeId || get().activeId === config.id) {
@@ -193,6 +260,7 @@ export const createPresetDraft = (): string =>
       description: '',
       author: '',
       version: '1.0.0',
+      copyright: '',
       protocol: 'openai',
       base_url: 'https://api.deepseek.com',
       model: 'deepseek-chat',
@@ -205,10 +273,23 @@ export const createPresetDraft = (): string =>
     2
   )
 
-/** 删除预设；若是启用项先置空，再删库 */
+/**
+ * 删除预设；内置预设（默认预设 / 内置演示包）拒绝删除并静默忽略。
+ * 删除当前启用项后自动启用默认预设——保证永远至少有一个可用预设。
+ */
 export const removePreset = async (id: string): Promise<void> => {
+  if (id === DEFAULT_PRESET_ID) {
+    return
+  }
+  const stored = await getStoredPreset(id)
+  if (stored?.builtin) {
+    return
+  }
   if (get().activeId === id) {
-    await activatePreset(null)
+    // 默认预设理论上总在；先补齐再启用，避免列表为空时没有可启用项
+    await ensureDefaultPreset()
+    await refreshPresets()
+    await activatePreset(DEFAULT_PRESET_ID)
   }
   await deleteStoredPreset(id)
   await refreshPresets()
@@ -216,16 +297,18 @@ export const removePreset = async (id: string): Promise<void> => {
 
 let initTask: Promise<void> | undefined
 
-/** 读取已存预设并恢复上次启用的项；只执行一次 */
+/** 初始化：确保默认预设存在，读取已存预设并恢复上次启用的项；只执行一次 */
 export const initPresets = (): Promise<void> =>
   (initTask ??= (async () => {
     try {
+      await ensureDefaultPreset()
       await refreshPresets()
       const saved = readActiveId()
       if (saved && get().presets.some((preset) => preset.id === saved)) {
         await activatePreset(saved)
       } else {
-        await activatePreset(null)
+        // 未设置启用项（首次安装 / 记录失效）时默认启用内置默认预设
+        await activatePreset(DEFAULT_PRESET_ID)
       }
     } catch {
       // 读取失败时保持空列表，不阻塞界面
@@ -241,6 +324,17 @@ export const useActivePreset = (): PresetConfig | null => usePresetStore((state)
 
 /** 给 API 层用的同步读取：当前启用的预设配置，未启用时为 null */
 export const getActivePreset = (): PresetConfig | null => usePresetStore.getState().active
+
+/**
+ * 给请求层用的同步读取：当前启用预设的解析结果。
+ * 「默认预设 + 没有填写任何覆盖字段」与无预设完全等价，这里返回 null，
+ * 让 client / reply / 压缩等调用方走与接入预设前完全相同的代码路径。
+ */
+export const getActiveResolvedPreset = (): ResolvedPreset | null => {
+  const active = usePresetStore.getState().active
+  return isSystemDefaultPreset(active) ? null : resolvePreset(active)
+}
+
 /** 读取某个预设的完整配置（供编辑器回填；启用项也可直接用 usePresetState().active） */
 export const loadPresetConfig = async (id: string): Promise<PresetConfig | null> => {
   const stored = await getStoredPreset(id)

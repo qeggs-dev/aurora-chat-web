@@ -264,9 +264,36 @@
   white-space: nowrap;
 }
 
-.clearRow {
+/* 底部操作：左侧导出、右侧两种清理；窄屏按组换行 */
+.actions {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.actionsGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 日志被清理但累计统计保留时的列表说明 */
+.logEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 10px;
+}
+
+.logEmptyTitle {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
 }
 
 /* 窄屏：统计单列、余额字段与请求列表改两行，按钮至少 44px */
@@ -317,11 +344,12 @@
     grid-column: 1 / -1;
   }
 
-  .clearRow {
-    justify-content: stretch;
+  .actions {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .clearRow > button {
+  .actionsGroup > button {
     flex: 1 1 auto;
     min-height: 44px;
   }

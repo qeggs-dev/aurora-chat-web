@@ -7,7 +7,7 @@ import type {
   TextBlockParam,
   ToolResultBlockParam,
 } from '../api/types.js'
-import { getActivePreset } from '../preset/index.js'
+import { getActiveResolvedPreset } from '../preset/index.js'
 import type {
   AssistantMessage,
   ClientToolUsePart,
@@ -33,7 +33,7 @@ import { buildCompactedSummaryText } from './compaction.js'
  * system / developer 消息，anthropic 保留 latest_reminder 角色（DeepSeek 扩展）。
  */
 export const buildSystemPrompt = (fallback: string): string => {
-  const presetPrompt = getActivePreset()?.system_prompt?.trim()
+  const presetPrompt = getActiveResolvedPreset()?.system_prompt.trim()
   const base = presetPrompt ? presetPrompt : fallback.trim()
   const meta = runtimeMeta()
   return base ? `${base}\n\n${meta}` : meta
@@ -238,7 +238,7 @@ export const getReplyText = (reply: AssistantMessage) =>
 
 /** 续写（prefill）只有 Anthropic 协议原生支持：Chat / Responses 直接禁用「继续」 */
 const supportsPrefill = (): boolean => {
-  const preset = getActivePreset()
+  const preset = getActiveResolvedPreset()
   return preset === null || preset.protocol === 'anthropic'
 }
 

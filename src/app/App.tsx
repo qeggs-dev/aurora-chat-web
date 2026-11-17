@@ -3,7 +3,7 @@ import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
 import { initStylePacks } from '../services/style/store.js'
 import { initMemory, setMemoryEnabled } from '../services/memory/store.js'
-import { initPresets, usePresetStore } from '../services/preset/store.js'
+import { getActiveResolvedPreset, initPresets, usePresetStore } from '../services/preset/store.js'
 import { initUsage } from '../services/usage/store.js'
 import { useIsMobile, useMobileViewport, usePreventPageScroll } from './viewport.js'
 import {
@@ -80,14 +80,15 @@ export const App = () => {
     // 之后切换预设（activatePreset）时同步记忆开关，关闭记忆时请求里不出现任何工具。
     let memoryReady = false
     void initPresets().then(() => {
-      void initMemory(usePresetStore.getState().active?.memory.enabled ?? false)
+      // 预设解析后的记忆开关：默认预设留空 = 系统默认（关闭）
+      void initMemory(getActiveResolvedPreset()?.memory.enabled ?? false)
       memoryReady = true
     })
     const unsubscribePreset = usePresetStore.subscribe((state, previous) => {
       if (!memoryReady || state.active === previous.active) {
         return
       }
-      void setMemoryEnabled(state.active?.memory.enabled ?? false)
+      void setMemoryEnabled(getActiveResolvedPreset()?.memory.enabled ?? false)
     })
     // 用量：恢复最近请求记录（统计面板用）
     void initUsage()

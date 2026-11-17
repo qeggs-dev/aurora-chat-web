@@ -58,6 +58,17 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+/* 导入失败时展示字段级原因（如 effects.tilt / effects.window.x1），只作为纯文本追加 */
+.statusDetail {
+  display: block;
+  margin-top: 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-markdown-code);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
 .empty {
   display: flex;
   flex-direction: column;
@@ -173,6 +184,14 @@
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
+  transition: transform 200ms ease-out;
+  will-change: transform;
+}
+
+/* 封面 tilt 的透视容器：绝对铺满 hero，指针事件挂在这一层，cover 只负责 transform */
+.detailCoverFrame {
+  position: absolute;
+  inset: 0;
 }
 
 .detailHero::after {
@@ -490,6 +509,12 @@
   justify-content: flex-end;
   gap: 8px;
   padding-top: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .detailCover {
+    transition: none;
+  }
 }
 
 @media not all and (min-width: 768px) {

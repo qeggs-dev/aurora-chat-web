@@ -188,6 +188,8 @@ export type StyleAssetEntry = {
   /** 仅 align=custom 时生效；其它情况忽略并 warn 一次 */
   position?: string
   render?: StyleRender
+  /** 仅图标资源生效：alpha 通道静态特效；背景 / 字体 / 文本上出现时导入忽略并 warn */
+  effects?: StyleEffects
 }
 
 /** 配色令牌键：color_palette 里每个主题可选的 13 个语义色 */
@@ -215,6 +217,121 @@ export type PaletteColors = Partial<Record<PaletteColorKey, string>>
 /** color_palette：浅色与深色主题各自一套语义色 */
 export type StylePalette = { light?: PaletteColors; dark?: PaletteColors }
 
+/**
+ * 视觉特效：只用于图标类资源（icon.* 与包图标）。
+ * 字段缺省时按 EFFECT_DEFAULTS 补齐；所有长度 / 角度都以资源原图像素为坐标系。
+ */
+export type StyleShadowEffect = {
+  /** 水平偏移，-100..100 */
+  x?: number
+  /** 垂直偏移，-100..100 */
+  y?: number
+  /** 模糊半径，0..100 */
+  blur?: number
+  /** 阴影颜色，严格 CSS 颜色校验 */
+  color?: string
+}
+
+export type StyleGlowEffect = {
+  /** 半径，0..50 */
+  radius?: number
+  color?: string
+  /** 强度，0..1 */
+  intensity?: number
+}
+
+/**
+ * 裁切窗口：归一化坐标（0–1，相对原图宽高），表示从 (x1,y1) 到 (x2,y2) 的可见区域。
+ * 四个数都必须出现、在 0–1 之间，且 x1 < x2、y1 < y2。
+ */
+export type StyleWindowEffect = {
+  x1?: number
+  y1?: number
+  x2?: number
+  y2?: number
+}
+
+export type StyleEmbossEffect = {
+  /** 浮雕深度（像素偏移），0..10 */
+  depth?: number
+  /** 光照方向，0..360 度（0 = 右，逆时针） */
+  angle?: number
+  /** 强度，0..1 */
+  intensity?: number
+}
+
+export type StyleStrokeEffect = {
+  /** 描边宽度，0..20 */
+  width?: number
+  color?: string
+}
+
+/** 卡片伪 3D 偏转：顶层 index.json 的 card.tilt，不是图片资源字段 */
+export type StyleTiltEffect = {
+  /** 最大偏转角，0..30 度 */
+  maxAngle?: number
+  /** 视距，200..2000 px */
+  perspective?: number
+  /** 偏转时的缩放，0.8..1.2 */
+  scale?: number
+}
+
+export type StyleEffects = {
+  /** 整体不透明度，0..1 */
+  opacity?: number
+  /** 映射为 CSS filter: drop-shadow()，天然按 alpha 生效 */
+  shadow?: StyleShadowEffect
+  /** alpha 外发光：派生图底层 */
+  outerGlow?: StyleGlowEffect
+  /** alpha 内发光：派生图层 */
+  innerGlow?: StyleGlowEffect
+  emboss?: StyleEmbossEffect
+  stroke?: StyleStrokeEffect
+  /** 裁切窗口：背景 / 图标 / 封面都可用 */
+  window?: StyleWindowEffect
+  /** 缩放倍率 0–4：1 不缩放、0 不显示；先在 window 内裁切，再以裁切区域中心缩放 */
+  zoom?: number
+  /**
+   * 只用于校验拦截：图标资源上出现 tilt 报 badConfig。
+   * 真正的卡片偏转配置在 StyleManifest.card.tilt 上。
+   */
+  tilt?: StyleTiltEffect
+}
+
+/** effects 允许的键（未知键导入时忽略并 warn） */
+export const STYLE_EFFECT_KEYS = [
+  'opacity',
+  'shadow',
+  'outerGlow',
+  'innerGlow',
+  'emboss',
+  'stroke',
+  'window',
+  'zoom',
+  'tilt',
+] as const
+
+/**
+ * 特效字段缺省值：字段对象存在但没写某个子字段时用这里的值。
+ * 例：`outerGlow: {}` 等价于 radius 10 / 白色 / 强度 1。
+ */
+export const EFFECT_DEFAULTS = {
+  opacity: 1,
+  shadow: { x: 0, y: 4, blur: 12, color: '#00000066' },
+  outerGlow: { radius: 10, color: '#ffffff', intensity: 1 },
+  innerGlow: { radius: 6, color: '#ffffff', intensity: 1 },
+  emboss: { depth: 1.5, angle: 45, intensity: 0.6 },
+  stroke: { width: 2, color: '#000000' },
+  zoom: 1,
+} as const
+
+/** card.tilt 缺省值：只有写了 card.tilt 才启用，子字段按这里补齐 */
+export const TILT_DEFAULTS = {
+  maxAngle: 12,
+  perspective: 700,
+  scale: 1.02,
+} as const
+
 /** index.json 的结构；schema 恒为 1 */
 export type StyleManifest = {
   schema: 1
@@ -224,9 +341,10 @@ export type StyleManifest = {
   author?: string
   version?: string
   sidebarTitle?: string
-  icon?: { file: string }
-  /** 详情页封面（可选）；路径规则与其它资源一致，只用包内文件 */
-  cover?: { file: string }
+  /** 包图标：可带静态 effects（tilt 报 badConfig） */
+  icon?: { file: string; effects?: StyleEffects }
+  /** 详情页封面（可选）：允许静态 effects 与 tilt（卡片偏转只在这里与图标资源上生效） */
+  cover?: { file: string; effects?: StyleEffects }
   license?: { file: string }
   color_palette?: StylePalette
   assets: Record<string, StyleAssetEntry>

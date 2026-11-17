@@ -2,6 +2,7 @@
 import { unzipSync } from 'fflate'
 import {
   PALETTE_KEYS,
+  STYLE_EFFECT_KEYS,
   STYLE_ALIGNS,
   STYLE_FITS,
   STYLE_PREFIX,
@@ -12,10 +13,17 @@ import type {
   PaletteColors,
   StyleAlign,
   StyleAssetEntry,
+  StyleEffects,
+  StyleEmbossEffect,
   StyleFit,
+  StyleGlowEffect,
   StyleManifest,
   StylePalette,
   StyleRender,
+  StyleShadowEffect,
+  StyleStrokeEffect,
+  StyleTiltEffect,
+  StyleWindowEffect,
 } from './types.js'
 
 export type StylePackErrorCode =
@@ -80,11 +88,262 @@ const HSL_COLOR =
 
 const isCssColor = (value: unknown): value is string =>
   typeof value === 'string' &&
-  (HEX_COLOR.test(value) || RGB_COLOR.test(value) || HSL_COLOR.test(value) || value.toLowerCase() === 'transparent')
+  (HEX_COLOR.test(value) ||
+    RGB_COLOR.test(value) ||
+    HSL_COLOR.test(value) ||
+    value.toLowerCase() === 'transparent')
 
 /** 样式包校验告警（忽略无意义字段等）：项目全局禁 console，这里集中豁免一处 */
 // oxlint-disable-next-line no-console
 const warn = (message: string): void => console.warn(message)
+
+/** 只接受普通对象（null / 数组 / 其它类型都算结构错误） */
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+
+/** 未知特效键：忽略并提示；导入只跑一遍，因此每个未知键恰好 warn 一次 */
+const warnUnknownEffectKeys = (
+  record: Record<string, unknown>,
+  field: string,
+  known: readonly string[]
+): void => {
+  for (const key of Object.keys(record)) {
+    if (!known.includes(key)) {
+      warn(`[style-pack] ${field}.${key} 是未知特效字段，已忽略`)
+    }
+  }
+}
+
+const readEffectObject = (value: unknown, field: string): Record<string, unknown> => {
+  if (!isPlainObject(value)) {
+    throw new StylePackError('badConfig', `${field} must be an object`)
+  }
+  return value
+}
+
+/** 特效数值：必须是有限数字且落在区间内，否则 badConfig 并指名字段 */
+const readEffectNumber = (value: unknown, field: string, min: number, max: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+    throw new StylePackError('badConfig', `${field} must be a number within ${min}..${max}`)
+  }
+  return value
+}
+
+/** 特效颜色沿用配色表的严格 CSS 颜色校验（#hex / rgb() / rgba() / hsl() / hsla() / transparent） */
+const readEffectColor = (value: unknown, field: string): string => {
+  if (!isCssColor(value)) {
+    throw new StylePackError('badConfig', `${field} must be a CSS color`)
+  }
+  return value
+}
+
+const SHADOW_KEYS = ['x', 'y', 'blur', 'color'] as const
+const GLOW_KEYS = ['radius', 'color', 'intensity'] as const
+const EMBOSS_KEYS = ['depth', 'angle', 'intensity'] as const
+const STROKE_KEYS = ['width', 'color'] as const
+const TILT_KEYS = ['maxAngle', 'perspective', 'scale'] as const
+const WINDOW_KEYS = ['x1', 'y1', 'x2', 'y2'] as const
+
+const readShadowEffect = (raw: unknown, field: string): StyleShadowEffect => {
+  const record = readEffectObject(raw, field)
+  warnUnknownEffectKeys(record, field, SHADOW_KEYS)
+  const effect: StyleShadowEffect = {}
+  if (record.x !== undefined) {
+    effect.x = readEffectNumber(record.x, `${field}.x`, -100, 100)
+  }
+  if (record.y !== undefined) {
+    effect.y = readEffectNumber(record.y, `${field}.y`, -100, 100)
+  }
+  if (record.blur !== undefined) {
+    effect.blur = readEffectNumber(record.blur, `${field}.blur`, 0, 100)
+  }
+  if (record.color !== undefined) {
+    effect.color = readEffectColor(record.color, `${field}.color`)
+  }
+  return effect
+}
+
+const readGlowEffect = (raw: unknown, field: string): StyleGlowEffect => {
+  const record = readEffectObject(raw, field)
+  warnUnknownEffectKeys(record, field, GLOW_KEYS)
+  const effect: StyleGlowEffect = {}
+  if (record.radius !== undefined) {
+    effect.radius = readEffectNumber(record.radius, `${field}.radius`, 0, 50)
+  }
+  if (record.color !== undefined) {
+    effect.color = readEffectColor(record.color, `${field}.color`)
+  }
+  if (record.intensity !== undefined) {
+    effect.intensity = readEffectNumber(record.intensity, `${field}.intensity`, 0, 1)
+  }
+  return effect
+}
+
+const readEmbossEffect = (raw: unknown, field: string): StyleEmbossEffect => {
+  const record = readEffectObject(raw, field)
+  warnUnknownEffectKeys(record, field, EMBOSS_KEYS)
+  const effect: StyleEmbossEffect = {}
+  if (record.depth !== undefined) {
+    effect.depth = readEffectNumber(record.depth, `${field}.depth`, 0, 10)
+  }
+  if (record.angle !== undefined) {
+    effect.angle = readEffectNumber(record.angle, `${field}.angle`, 0, 360)
+  }
+  if (record.intensity !== undefined) {
+    effect.intensity = readEffectNumber(record.intensity, `${field}.intensity`, 0, 1)
+  }
+  return effect
+}
+
+const readStrokeEffect = (raw: unknown, field: string): StyleStrokeEffect => {
+  const record = readEffectObject(raw, field)
+  warnUnknownEffectKeys(record, field, STROKE_KEYS)
+  const effect: StyleStrokeEffect = {}
+  if (record.width !== undefined) {
+    effect.width = readEffectNumber(record.width, `${field}.width`, 0, 20)
+  }
+  if (record.color !== undefined) {
+    effect.color = readEffectColor(record.color, `${field}.color`)
+  }
+  return effect
+}
+
+const readTiltEffect = (raw: unknown, field: string): StyleTiltEffect => {
+  const record = readEffectObject(raw, field)
+  warnUnknownEffectKeys(record, field, TILT_KEYS)
+  const effect: StyleTiltEffect = {}
+  if (record.maxAngle !== undefined) {
+    effect.maxAngle = readEffectNumber(record.maxAngle, `${field}.maxAngle`, 0, 30)
+  }
+  if (record.perspective !== undefined) {
+    effect.perspective = readEffectNumber(record.perspective, `${field}.perspective`, 200, 2000)
+  }
+  if (record.scale !== undefined) {
+    effect.scale = readEffectNumber(record.scale, `${field}.scale`, 0.8, 1.2)
+  }
+  return effect
+}
+
+/**
+ * 裁切窗口：四个归一化坐标都必须出现且落在 0–1，并要求 x1 < x2、y1 < y2；
+ * 任何一项不满足都报 badConfig 并指名字段。
+ */
+const readWindowEffect = (raw: unknown, field: string): StyleWindowEffect => {
+  const record = readEffectObject(raw, field)
+  warnUnknownEffectKeys(record, field, WINDOW_KEYS)
+  if (
+    record.x1 === undefined ||
+    record.y1 === undefined ||
+    record.x2 === undefined ||
+    record.y2 === undefined
+  ) {
+    throw new StylePackError('badConfig', `${field} must have x1 / y1 / x2 / y2`)
+  }
+  const x1 = readEffectNumber(record.x1, `${field}.x1`, 0, 1)
+  const y1 = readEffectNumber(record.y1, `${field}.y1`, 0, 1)
+  const x2 = readEffectNumber(record.x2, `${field}.x2`, 0, 1)
+  const y2 = readEffectNumber(record.y2, `${field}.y2`, 0, 1)
+  if (x1 >= x2) {
+    throw new StylePackError('badConfig', `${field}.x1 must be less than ${field}.x2`)
+  }
+  if (y1 >= y2) {
+    throw new StylePackError('badConfig', `${field}.y1 must be less than ${field}.y2`)
+  }
+  return { x1, y1, x2, y2 }
+}
+
+/**
+ * 视觉特效：只接受已知键与合法数值，返回净化后的对象（只保留出现过的合法子字段），
+ * 空对象视为没有特效。tilt 只允许出现在 icon.* 资源与封面（allowTilt），其它位置报 badConfig。
+ */
+const readEffects = (raw: unknown, field: string, allowTilt: boolean): StyleEffects | undefined => {
+  if (raw === undefined) {
+    return undefined
+  }
+  const record = readEffectObject(raw, field)
+  warnUnknownEffectKeys(record, field, STYLE_EFFECT_KEYS)
+  const effects: StyleEffects = {}
+  if (record.opacity !== undefined) {
+    effects.opacity = readEffectNumber(record.opacity, `${field}.opacity`, 0, 1)
+  }
+  if (record.shadow !== undefined) {
+    effects.shadow = readShadowEffect(record.shadow, `${field}.shadow`)
+  }
+  if (record.outerGlow !== undefined) {
+    effects.outerGlow = readGlowEffect(record.outerGlow, `${field}.outerGlow`)
+  }
+  if (record.innerGlow !== undefined) {
+    effects.innerGlow = readGlowEffect(record.innerGlow, `${field}.innerGlow`)
+  }
+  if (record.emboss !== undefined) {
+    effects.emboss = readEmbossEffect(record.emboss, `${field}.emboss`)
+  }
+  if (record.stroke !== undefined) {
+    effects.stroke = readStrokeEffect(record.stroke, `${field}.stroke`)
+  }
+  if (record.window !== undefined) {
+    effects.window = readWindowEffect(record.window, `${field}.window`)
+  }
+  if (record.zoom !== undefined) {
+    effects.zoom = readEffectNumber(record.zoom, `${field}.zoom`, 0, 4)
+  }
+  if (record.tilt !== undefined) {
+    if (!allowTilt) {
+      throw new StylePackError(
+        'badConfig',
+        `${field}.tilt 不被允许：卡片偏转只支持 icon.* 资源与封面`
+      )
+    }
+    effects.tilt = readTiltEffect(record.tilt, `${field}.tilt`)
+  }
+  return Object.keys(effects).length > 0 ? effects : undefined
+}
+
+/**
+ * 背景资源的 effects：只接受 window / zoom（裁切与缩放对铺满容器的背景有意义）；
+ * 静态特效与 tilt 一律忽略并 warn，不留在净化后的清单里。
+ */
+const readBackgroundEffects = (raw: unknown, field: string): StyleEffects | undefined => {
+  if (raw === undefined) {
+    return undefined
+  }
+  const record = readEffectObject(raw, field)
+  let effects: StyleEffects | undefined
+  const ignored: string[] = []
+  for (const key of Object.keys(record)) {
+    if (key === 'window') {
+      effects = { ...effects, window: readWindowEffect(record.window, `${field}.window`) }
+    } else if (key === 'zoom') {
+      effects = { ...effects, zoom: readEffectNumber(record.zoom, `${field}.zoom`, 0, 4) }
+    } else {
+      ignored.push(key)
+    }
+  }
+  if (ignored.length > 0) {
+    warn(
+      `[style-pack] ${field} 的 ${ignored
+        .map((key) => `effects.${key}`)
+        .join(' / ')} 被忽略：背景资源只支持 window / zoom`
+    )
+  }
+  return effects
+}
+
+/** 清单里的 icon / cover：`{ file, effects? }`；cover 允许 tilt，包图标不允许 */
+const readManifestImage = (
+  value: unknown,
+  field: 'icon' | 'cover'
+): { file: string; effects?: StyleEffects } | undefined => {
+  if (value === undefined) {
+    return undefined
+  }
+  const record = typeof value === 'string' ? { file: value } : value
+  if (!isPlainObject(record) || typeof record.file !== 'string' || !record.file) {
+    throw new StylePackError('badIndex', `${field}.file must be a string`)
+  }
+  const effects = readEffects(record.effects, field, field === 'cover')
+  return effects ? { file: record.file, effects } : { file: record.file }
+}
 
 /**
  * 纯文本字段（侧边栏标题 / 描述 / 作者 / 版本 / 许可证）拒绝尖括号与控制字符；
@@ -146,7 +405,11 @@ const readColorPalette = (raw: unknown): StylePalette | undefined => {
 }
 
 /** 非关键文本字段（description / author / version）：类型/长度问题沿用 badIndex，内容不安全时丢弃并提示 */
-const readOptionalText = (value: unknown, field: string, multiline: boolean): string | undefined => {
+const readOptionalText = (
+  value: unknown,
+  field: string,
+  multiline: boolean
+): string | undefined => {
   if (value === undefined) {
     return undefined
   }
@@ -183,12 +446,18 @@ const readAssetOptions = (entry: Record<string, unknown>, field: string): void =
   }
   if (entry.align !== undefined) {
     if (typeof entry.align !== 'string' || !STYLE_ALIGNS.includes(entry.align as StyleAlign)) {
-      throw new StylePackError('badConfig', `${field}.align must be one of ${STYLE_ALIGNS.join('|')}`)
+      throw new StylePackError(
+        'badConfig',
+        `${field}.align must be one of ${STYLE_ALIGNS.join('|')}`
+      )
     }
   }
   if (entry.render !== undefined) {
     if (typeof entry.render !== 'string' || !STYLE_RENDERS.includes(entry.render as StyleRender)) {
-      throw new StylePackError('badConfig', `${field}.render must be one of ${STYLE_RENDERS.join('|')}`)
+      throw new StylePackError(
+        'badConfig',
+        `${field}.render must be one of ${STYLE_RENDERS.join('|')}`
+      )
     }
   }
   if (entry.position !== undefined && !isSafePosition(entry.position)) {
@@ -228,6 +497,19 @@ const stripOptions = (
       entry.render = undefined
     }
   }
+}
+
+/** 清掉某类资源上用不到的 effects（背景 / 字体 / 文本）：非致命，只 warn 一次 */
+const stripEffects = (
+  entry: StyleAssetEntry | undefined,
+  assetId: string,
+  reason: string
+): void => {
+  if (entry === null || typeof entry !== 'object' || entry.effects === undefined) {
+    return
+  }
+  warn(`[style-pack] ${assetId} 的 effects 被忽略：${reason}`)
+  entry.effects = undefined
 }
 
 /** 只接受包内相对路径：不允许绝对路径、`.`/`..` 与空段。 */
@@ -311,9 +593,11 @@ const readManifest = (text: string): StyleManifest => {
     author: readOptionalText(record.author, 'author', false),
     version: readOptionalText(record.version, 'version', false),
     sidebarTitle: readSidebarTitle(record.sidebarTitle),
-    icon: ref(record.icon, 'icon') ? { file: ref(record.icon, 'icon') as string } : undefined,
-    cover: ref(record.cover, 'cover') ? { file: ref(record.cover, 'cover') as string } : undefined,
-    license: ref(record.license, 'license') ? { file: ref(record.license, 'license') as string } : undefined,
+    icon: readManifestImage(record.icon, 'icon'),
+    cover: readManifestImage(record.cover, 'cover'),
+    license: ref(record.license, 'license')
+      ? { file: ref(record.license, 'license') as string }
+      : undefined,
     color_palette: colorPalette,
     assets: assets as Record<string, StyleAssetEntry>,
   }
@@ -377,19 +661,50 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
     }
     const ext = extensionOf(path)
     if (IMAGE_EXT.has(ext)) {
-      const alpha = typeof entry.alpha === 'number' && Number.isFinite(entry.alpha) ? Math.min(1, Math.max(0, entry.alpha)) : 1
-      const exposure = typeof entry.exposure === 'number' && Number.isFinite(entry.exposure) ? Math.min(1, Math.max(-1, entry.exposure)) : 0
+      const alpha =
+        typeof entry.alpha === 'number' && Number.isFinite(entry.alpha)
+          ? Math.min(1, Math.max(0, entry.alpha))
+          : 1
+      const exposure =
+        typeof entry.exposure === 'number' && Number.isFinite(entry.exposure)
+          ? Math.min(1, Math.max(-1, entry.exposure))
+          : 0
       assets[assetId] = { blob: blobOf(path, MIME[ext]), alpha, exposure, kind: 'image' }
+      if (assetId.startsWith(`${STYLE_PREFIX}.background.`)) {
+        // 背景是铺满容器的图层：只保留 window / zoom，静态特效与 tilt 忽略并 warn
+        if (entry !== null && typeof entry === 'object') {
+          entry.effects = readBackgroundEffects(entry.effects, `assets["${assetId}"]`)
+        }
+      } else if (entry !== null && typeof entry === 'object') {
+        // 图标类（icon.*）：静态 effects + tilt；其它图片槽位允许静态 effects，tilt 报 badConfig
+        entry.effects = readEffects(
+          entry.effects,
+          `assets["${assetId}"]`,
+          assetId.startsWith(`${STYLE_PREFIX}.icon.`)
+        )
+      }
       if (assetId.startsWith(`${STYLE_PREFIX}.icon.`)) {
         // 图标是定尺寸 <img>：fit / align / position 没有意义，只应用 render
-        stripOptions(entry, assetId, ['fit', 'align', 'position'], '图标只应用 render（image-rendering）')
+        stripOptions(
+          entry,
+          assetId,
+          ['fit', 'align', 'position'],
+          '图标只应用 render（image-rendering）'
+        )
       }
     } else if (FONT_EXT.has(ext)) {
       assets[assetId] = { blob: blobOf(path, MIME[ext]), alpha: 1, exposure: 0, kind: 'font' }
       stripOptions(entry, assetId, ['fit', 'align', 'position', 'render'], '字体资源不应用图片选项')
+      stripEffects(entry, assetId, '字体资源不支持视觉特效')
     } else if (TEXT_EXT.has(ext)) {
-      assets[assetId] = { blob: blobOf(path, 'text/plain; charset=utf-8'), alpha: 1, exposure: 0, kind: 'font' }
+      assets[assetId] = {
+        blob: blobOf(path, 'text/plain; charset=utf-8'),
+        alpha: 1,
+        exposure: 0,
+        kind: 'font',
+      }
       stripOptions(entry, assetId, ['fit', 'align', 'position', 'render'], '文本资源不应用图片选项')
+      stripEffects(entry, assetId, '文本资源不支持视觉特效')
     } else {
       ignored.push(assetId)
     }

@@ -2,3 +2,26 @@
   display: block;
   object-fit: contain;
 }
+
+/*
+ * 带 tilt 的图标外层透视容器：尺寸固定为图标尺寸，保持与直接渲染 <img> 一致的布局；
+ * pointermove / pointerleave 由 useTilt 挂在容器上，图标本身不拦截点击。
+ */
+.tiltFrame {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  transform-style: preserve-3d;
+}
+
+.tiltImage {
+  transition: transform 160ms ease-out;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tiltImage {
+    transition: none;
+  }
+}

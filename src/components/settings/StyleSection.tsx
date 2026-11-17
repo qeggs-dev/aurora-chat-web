@@ -8,6 +8,7 @@ import {
   removeStylePack,
   useStylePackState,
 } from '../../services/style/store.js'
+import { effectCss, useEffectsImage, useTilt } from '../../services/style/effects.js'
 import {
   PALETTE_KEYS,
   STYLE_PREFIX,
@@ -48,11 +49,11 @@ const importErrorKeys: Record<StylePackErrorCode, TranslationKey> = {
 }
 
 /** 行内提示：`error` 为 true 时用错误色显示。 */
-type Status = (TranslationMessage & { error?: boolean }) | null
+type Status = (TranslationMessage & { error?: boolean; detail?: string }) | null
 
 const importErrorStatus = (error: unknown): Status =>
   error instanceof StylePackError
-    ? { key: importErrorKeys[error.code], error: true }
+    ? { key: importErrorKeys[error.code], error: true, detail: error.detail }
     : {
         key: 'stylePackImportFailed',
         params: { message: error instanceof Error ? error.message : String(error) },
@@ -64,6 +65,44 @@ const importErrorStatus = (error: unknown): Status =>
  * 详情页背景写成 `url("…")`，包内路径不会进入样式。
  */
 const cssUrl = (url: string): string => `url("${url.replace(/[\\"]/g, '\\$&')}")`
+
+/**
+ * 包图标：effects 的静态部分（阴影 / 透明度 / alpha 派生图）。
+ * 包图标不允许 tilt（zip.ts 导入时已拒绝），因此这里不做透视处理。
+ */
+const StylePackIcon = ({
+  pack,
+  className,
+  letterClassName,
+}: {
+  pack: StylePackSummary
+  className: string
+  letterClassName: string
+}) => {
+  const iconUrl = pack.iconUrl
+  const effects = pack.manifest.icon?.effects
+  const tone = effectCss(effects)
+  const derived = useEffectsImage(iconUrl, effects, `pack-icon:${pack.id}`)
+  if (!iconUrl) {
+    return (
+      <span className={letterClassName} aria-hidden="true">
+        {pack.name.slice(0, 1)}
+      </span>
+    )
+  }
+  return (
+    <img
+      className={className}
+      src={derived.url ?? iconUrl}
+      alt=""
+      style={{
+        filter: tone.filter,
+        opacity: tone.opacity,
+        transform: derived.scale > 1.0001 ? `scale(${derived.scale})` : undefined,
+      }}
+    />
+  )
+}
 
 /** 资源 ID → 展示名：去掉统一前缀与主题后缀，如 `background.main`、`icon.send`、`font` */
 const assetLabel = (assetId: string): string =>
@@ -124,7 +163,10 @@ const DetailChips = ({ items, empty }: { items: string[]; empty: string }) =>
   )
 
 /** 背景资源参数：缺省值按 README 的约定显示，便于对照 index.json 判断是否写过字段 */
-const assetParam = (entry: StyleAssetEntry, key: 'alpha' | 'exposure' | 'fit' | 'align' | 'position' | 'render'): string => {
+const assetParam = (
+  entry: StyleAssetEntry,
+  key: 'alpha' | 'exposure' | 'fit' | 'align' | 'position' | 'render'
+): string => {
   if (key === 'alpha') {
     return String(entry.alpha ?? 1)
   }
@@ -176,6 +218,11 @@ const StylePackDetailContent = ({
     .filter(Boolean)
     .join(' · ')
 
+  const coverEffects = manifest.cover?.effects
+  const coverTone = effectCss(coverEffects)
+  const coverImage = useEffectsImage(coverUrl, coverEffects, `cover:${pack.id}`)
+  const coverTilt = useTilt(coverEffects?.tilt)
+
   return (
     <>
       <div className={styles.detailBar}>
@@ -193,20 +240,30 @@ const StylePackDetailContent = ({
       <div className={styles.detailHero}>
         {coverUrl ? (
           <div
-            className={styles.detailCover}
-            style={{ backgroundImage: cssUrl(coverUrl) }}
-            aria-hidden="true"
-          />
+            className={styles.detailCoverFrame}
+            style={coverTilt.enabled ? coverTilt.frameStyle : undefined}
+            {...(coverTilt.enabled ? coverTilt.handlers : {})}
+          >
+            <div
+              className={styles.detailCover}
+              style={{
+                backgroundImage: cssUrl(coverImage.url ?? coverUrl),
+                filter: coverTone.filter,
+                opacity: coverTone.opacity,
+                transform: coverTilt.transform,
+                transformStyle: coverTilt.enabled ? 'preserve-3d' : undefined,
+              }}
+              aria-hidden="true"
+            />
+          </div>
         ) : null}
         <div className={styles.detailHeroBody}>
           <span className={styles.detailHeroIcon}>
-            {pack.iconUrl ? (
-              <img className={styles.detailHeroIconImage} src={pack.iconUrl} alt="" />
-            ) : (
-              <span className={styles.detailHeroIconLetter} aria-hidden="true">
-                {pack.name.slice(0, 1)}
-              </span>
-            )}
+            <StylePackIcon
+              pack={pack}
+              className={styles.detailHeroIconImage}
+              letterClassName={styles.detailHeroIconLetter}
+            />
           </span>
           <div className={styles.detailHeroText}>
             <div className={styles.detailHeroName}>{pack.name}</div>
@@ -222,13 +279,19 @@ const StylePackDetailContent = ({
         <div className={styles.detailRows}>
           <DetailRow label={t('stylePackDetailName')}>{pack.name}</DetailRow>
           <DetailRow label={t('stylePackDetailDescription')}>
-            {pack.description || <span className={styles.detailMuted}>{t('stylePackDetailNotProvided')}</span>}
+            {pack.description || (
+              <span className={styles.detailMuted}>{t('stylePackDetailNotProvided')}</span>
+            )}
           </DetailRow>
           <DetailRow label={t('stylePackDetailAuthor')}>
-            {pack.author || <span className={styles.detailMuted}>{t('stylePackDetailNotProvided')}</span>}
+            {pack.author || (
+              <span className={styles.detailMuted}>{t('stylePackDetailNotProvided')}</span>
+            )}
           </DetailRow>
           <DetailRow label={t('stylePackDetailVersion')}>
-            {pack.version || <span className={styles.detailMuted}>{t('stylePackDetailNotProvided')}</span>}
+            {pack.version || (
+              <span className={styles.detailMuted}>{t('stylePackDetailNotProvided')}</span>
+            )}
           </DetailRow>
           <DetailRow label={t('stylePackDetailId')}>
             <code className={styles.detailCode}>{pack.id}</code>
@@ -266,7 +329,8 @@ const StylePackDetailContent = ({
               </div>
               <div className={styles.detailResourceRow}>
                 <span className={styles.detailResourceLabel}>
-                  {t('stylePackDetailIcons')} · {t('stylePackDetailSlotCount', { count: icons.length })}
+                  {t('stylePackDetailIcons')} ·{' '}
+                  {t('stylePackDetailSlotCount', { count: icons.length })}
                 </span>
                 <DetailChips
                   items={icons.map((asset) => assetLabel(asset.id))}
@@ -318,7 +382,10 @@ const StylePackDetailContent = ({
         </div>
       </DetailSection>
 
-      <DetailSection title={t('stylePackDetailParamsSection')} hint={t('stylePackDetailParamsHint')}>
+      <DetailSection
+        title={t('stylePackDetailParamsSection')}
+        hint={t('stylePackDetailParamsHint')}
+      >
         <div className={styles.detailParams}>
           {THEME_LABELS.flatMap(({ theme, label }) => {
             const backgrounds = themedAssets(manifest, theme).filter((asset) =>
@@ -367,24 +434,32 @@ const StylePackDetailContent = ({
         </div>
         {THEME_LABELS.every(
           ({ theme }) =>
-            themedAssets(manifest, theme).filter((asset) => isBackgroundAsset(asset.id)).length === 0
+            themedAssets(manifest, theme).filter((asset) => isBackgroundAsset(asset.id)).length ===
+            0
         ) ? (
           <div className={styles.detailMuted}>{t('stylePackDetailParamsEmpty')}</div>
         ) : null}
         <div className={styles.detailResourceRow}>
           <span className={styles.detailResourceLabel}>{t('stylePackDetailFontFile')}</span>
           <DetailChips
-            items={[...new Set(THEME_LABELS.flatMap(({ theme }) =>
-              themedAssets(manifest, theme)
-                .filter((asset) => isFontAsset(asset.id))
-                .map((asset) => asset.entry.file)
-            ))]}
+            items={[
+              ...new Set(
+                THEME_LABELS.flatMap(({ theme }) =>
+                  themedAssets(manifest, theme)
+                    .filter((asset) => isFontAsset(asset.id))
+                    .map((asset) => asset.entry.file)
+                )
+              ),
+            ]}
             empty={t('stylePackDetailNotProvided')}
           />
         </div>
       </DetailSection>
 
-      <DetailSection title={t('stylePackDetailPaletteSection')} hint={t('stylePackDetailPaletteHint')}>
+      <DetailSection
+        title={t('stylePackDetailPaletteSection')}
+        hint={t('stylePackDetailPaletteHint')}
+      >
         {THEME_LABELS.map(({ theme, label }) => {
           const colors = manifest.color_palette?.[theme]
           const keys = colors ? PALETTE_KEYS.filter((key) => Boolean(colors[key])) : []
@@ -528,9 +603,7 @@ export const StyleSection = () => {
         <StylePackDetailContent
           pack={detailPack}
           coverUrl={
-            detailPack.id === activeId && active?.coverUrl
-              ? active.coverUrl
-              : detailPack.coverUrl
+            detailPack.id === activeId && active?.coverUrl ? active.coverUrl : detailPack.coverUrl
           }
           activeId={activeId}
           busy={busy}
@@ -576,6 +649,9 @@ export const StyleSection = () => {
               role={importStatus.error ? 'alert' : 'status'}
             >
               {t(importStatus.key, importStatus.params)}
+              {importStatus.detail ? (
+                <span className={styles.statusDetail}>{importStatus.detail}</span>
+              ) : null}
             </div>
           ) : error ? (
             <div className={clsx(styles.status, styles.statusError)} role="alert">
@@ -607,7 +683,9 @@ export const StyleSection = () => {
                     <StyleIcon />
                   </span>
                   <div className={settingsStyles.stylePackInfo}>
-                    <div className={settingsStyles.stylePackName}>{t('stylePackRestoreDefault')}</div>
+                    <div className={settingsStyles.stylePackName}>
+                      {t('stylePackRestoreDefault')}
+                    </div>
                     <div className={settingsStyles.stylePackDescription}>
                       {activeId === null ? t('stylePackDefaultInUse') : t('stylePackDefaultHint')}
                     </div>
@@ -659,23 +737,15 @@ export const StyleSection = () => {
                       }}
                     >
                       <span className={settingsStyles.stylePackIcon}>
-                        {pack.iconUrl ? (
-                          <img
-                            className={settingsStyles.stylePackIconImage}
-                            src={pack.iconUrl}
-                            alt=""
-                          />
-                        ) : (
-                          <span className={settingsStyles.stylePackIconLetter} aria-hidden="true">
-                            {pack.name.slice(0, 1)}
-                          </span>
-                        )}
+                        <StylePackIcon
+                          pack={pack}
+                          className={settingsStyles.stylePackIconImage}
+                          letterClassName={settingsStyles.stylePackIconLetter}
+                        />
                       </span>
                       <span className={settingsStyles.stylePackInfo}>
                         <span className={settingsStyles.stylePackName}>{pack.name}</span>
-                        {meta ? (
-                          <span className={settingsStyles.stylePackMeta}>{meta}</span>
-                        ) : null}
+                        {meta ? <span className={settingsStyles.stylePackMeta}>{meta}</span> : null}
                         {pack.description ? (
                           <span className={settingsStyles.stylePackDescription}>
                             {pack.description}
@@ -696,11 +766,7 @@ export const StyleSection = () => {
                           {t(activating ? 'stylePackLoadingPack' : 'stylePackLoad')}
                         </Button>
                       )}
-                      <Button
-                        variant="outlined"
-                        size="m"
-                        onClick={() => setDetailId(pack.id)}
-                      >
+                      <Button variant="outlined" size="m" onClick={() => setDetailId(pack.id)}>
                         {t('stylePackDetails')}
                       </Button>
                       <Button

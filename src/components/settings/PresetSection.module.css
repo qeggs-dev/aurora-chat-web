@@ -161,6 +161,14 @@
   font-weight: 400;
 }
 
+/* 标签上的「作者 · 版本」：弱化显示，不抢名称 */
+.tabMeta {
+  flex-shrink: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .dirtyDot {
   flex-shrink: 0;
   width: 6px;

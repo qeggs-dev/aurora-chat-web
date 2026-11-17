@@ -2,6 +2,7 @@
 import { unzipSync } from 'fflate'
 import {
   DEFAULT_PRESET_COMPACTION,
+  DEFAULT_PRESET_ID,
   DEFAULT_PRESET_MEMORY,
   DEFAULT_PRESET_PARAMS,
   PresetError,
@@ -19,6 +20,7 @@ const MAX_ENTRIES = 100
 const MAX_LICENSE_BYTES = 200 * 1024
 const MAX_PROMPT_BYTES = 64 * 1024
 const MAX_TEXT_FIELD = 400
+const MAX_COPYRIGHT_LENGTH = 500
 
 /** 清单必须位于 zip 根目录 */
 const CONFIG_FILE = 'api_configs.json'
@@ -113,6 +115,42 @@ const readOptionalText = (value: unknown, field: string): string | undefined => 
   }
   if (text.length > MAX_TEXT_FIELD) {
     return badConfig(`${field} must be at most ${MAX_TEXT_FIELD} chars`)
+  }
+  return text
+}
+
+/** 控制字符检查：只放行换行 / 回车 / 制表，其余 C0 与 DEL 视为非法 */
+const hasControlChars = (text: string): boolean => {
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index)
+    const allowed = code === 9 || code === 10 || code === 13
+    if ((code < 32 || code === 127) && !allowed) {
+      return true
+    }
+  }
+  return false
+}
+
+/** 版权声明：纯文本短声明（可多行），拒绝控制字符与 `<` / `>`，最长 500 字 */
+const readCopyright = (value: unknown): string | undefined => {
+  if (value === undefined || value === null) {
+    return undefined
+  }
+  if (typeof value !== 'string') {
+    return badConfig('copyright must be a string')
+  }
+  const text = value.trim()
+  if (!text) {
+    return undefined
+  }
+  if (hasControlChars(text)) {
+    return badConfig('copyright must not contain control characters')
+  }
+  if (text.includes('<') || text.includes('>')) {
+    return badConfig('copyright must not contain < or >')
+  }
+  if (text.length > MAX_COPYRIGHT_LENGTH) {
+    return badConfig(`copyright must be at most ${MAX_COPYRIGHT_LENGTH} chars`)
   }
   return text
 }
@@ -265,8 +303,7 @@ const readMemory = (raw: unknown): PresetMemory => {
   }
 }
 
-/** 解析并校验 preset 清单；zip 导入与手写 JSON 共用这一套规则。 */
-export const parsePresetConfig = (text: string): PresetConfig => {
+const parseJsonObject = (text: string): Record<string, unknown> => {
   let raw: unknown
   try {
     raw = JSON.parse(text)
@@ -276,6 +313,11 @@ export const parsePresetConfig = (text: string): PresetConfig => {
   if (!isRecord(raw)) {
     return badConfig('api_configs.json must be an object')
   }
+  return raw
+}
+
+/** schema / id / name 三个基本字段：zip、手写 JSON 与内置默认预设共用 */
+const readIdentity = (raw: Record<string, unknown>): { id: string; name: string } => {
   if (raw.schema !== 1) {
     return badConfig('schema must be 1')
   }
@@ -286,6 +328,172 @@ export const parsePresetConfig = (text: string): PresetConfig => {
   if (!name || name.length > 80) {
     return badConfig('name must be 1-80 chars')
   }
+  return { id: raw.id, name }
+}
+
+const hasValue = (value: unknown): boolean => value !== undefined && value !== null
+
+/* ---------- 内置默认预设的「部分字段」解析：留空 = 系统默认 ---------- */
+
+const readOptionalProtocol = (value: unknown): PresetProtocol | undefined => {
+  if (!hasValue(value)) {
+    return undefined
+  }
+  if (typeof value !== 'string' || !PROTOCOLS.has(value as PresetProtocol)) {
+    return badConfig('protocol must be openai, anthropic or responses')
+  }
+  return value as PresetProtocol
+}
+
+const readOptionalBaseUrl = (value: unknown): string | undefined => {
+  if (!hasValue(value)) {
+    return undefined
+  }
+  if (typeof value !== 'string' || !/^https?:\/\/\S+$/i.test(value.trim())) {
+    return badConfig('base_url must start with http(s)://')
+  }
+  return value.trim().replace(/\/+$/, '')
+}
+
+const readOptionalModel = (value: unknown): string | undefined => {
+  if (!hasValue(value)) {
+    return undefined
+  }
+  if (typeof value !== 'string' || !value.trim()) {
+    return badConfig('model must be a non-empty string')
+  }
+  return value.trim()
+}
+
+const readPartialParams = (raw: unknown): Partial<PresetParams> | undefined => {
+  if (raw === undefined || raw === null) {
+    return undefined
+  }
+  if (!isRecord(raw)) {
+    return badConfig('params must be an object')
+  }
+  const params: Partial<PresetParams> = {}
+  if (hasValue(raw.temperature)) {
+    params.temperature = readNumber(
+      raw.temperature,
+      'params.temperature',
+      0,
+      2,
+      DEFAULT_PRESET_PARAMS.temperature
+    )
+  }
+  if (hasValue(raw.top_p)) {
+    params.top_p = readNumber(raw.top_p, 'params.top_p', 0, 1, DEFAULT_PRESET_PARAMS.top_p)
+  }
+  if (hasValue(raw.max_tokens)) {
+    params.max_tokens = readPositiveInteger(
+      raw.max_tokens,
+      'params.max_tokens',
+      DEFAULT_PRESET_PARAMS.max_tokens
+    )
+  }
+  if (hasValue(raw.stop)) {
+    params.stop = readStop(raw.stop)
+  }
+  if (hasValue(raw.presence_penalty)) {
+    params.presence_penalty = readNumber(
+      raw.presence_penalty,
+      'params.presence_penalty',
+      -2,
+      2,
+      DEFAULT_PRESET_PARAMS.presence_penalty
+    )
+  }
+  if (hasValue(raw.frequency_penalty)) {
+    params.frequency_penalty = readNumber(
+      raw.frequency_penalty,
+      'params.frequency_penalty',
+      -2,
+      2,
+      DEFAULT_PRESET_PARAMS.frequency_penalty
+    )
+  }
+  if (hasValue(raw.seed)) {
+    const seed = readSeed(raw.seed)
+    if (seed !== null) {
+      params.seed = seed
+    }
+  }
+  if (hasValue(raw.reasoning_effort)) {
+    const effort = readReasoningEffort(raw.reasoning_effort)
+    if (effort !== null) {
+      params.reasoning_effort = effort
+    }
+  }
+  return Object.keys(params).length > 0 ? params : undefined
+}
+
+const readPartialCompaction = (raw: unknown): Partial<PresetCompaction> | undefined => {
+  if (raw === undefined || raw === null) {
+    return undefined
+  }
+  if (!isRecord(raw)) {
+    return badConfig('compaction must be an object')
+  }
+  const compaction: Partial<PresetCompaction> = {}
+  if (hasValue(raw.enabled)) {
+    compaction.enabled = readBoolean(
+      raw.enabled,
+      'compaction.enabled',
+      DEFAULT_PRESET_COMPACTION.enabled
+    )
+  }
+  if (hasValue(raw.trigger_tokens)) {
+    compaction.trigger_tokens = readPositiveInteger(
+      raw.trigger_tokens,
+      'compaction.trigger_tokens',
+      DEFAULT_PRESET_COMPACTION.trigger_tokens
+    )
+  }
+  if (hasValue(raw.keep_recent_messages)) {
+    compaction.keep_recent_messages = readInteger(
+      raw.keep_recent_messages,
+      'compaction.keep_recent_messages',
+      0,
+      100,
+      DEFAULT_PRESET_COMPACTION.keep_recent_messages
+    )
+  }
+  if (hasValue(raw.prompt)) {
+    const prompt = readNullablePrompt(raw.prompt, 'compaction.prompt')
+    if (prompt !== null) {
+      compaction.prompt = prompt
+    }
+  }
+  return Object.keys(compaction).length > 0 ? compaction : undefined
+}
+
+const readPartialMemory = (raw: unknown): Partial<PresetMemory> | undefined => {
+  if (raw === undefined || raw === null) {
+    return undefined
+  }
+  if (!isRecord(raw)) {
+    return badConfig('memory must be an object')
+  }
+  const memory: Partial<PresetMemory> = {}
+  if (hasValue(raw.enabled)) {
+    memory.enabled = readBoolean(raw.enabled, 'memory.enabled', DEFAULT_PRESET_MEMORY.enabled)
+  }
+  if (hasValue(raw.max_results)) {
+    memory.max_results = readInteger(
+      raw.max_results,
+      'memory.max_results',
+      1,
+      50,
+      DEFAULT_PRESET_MEMORY.max_results
+    )
+  }
+  return Object.keys(memory).length > 0 ? memory : undefined
+}
+
+/** 严格解析：zip 导入与普通预设保存共用，protocol / base_url / model 必填 */
+const parseFullPresetConfig = (raw: Record<string, unknown>): PresetConfig => {
+  const { id, name } = readIdentity(raw)
   if (typeof raw.protocol !== 'string' || !PROTOCOLS.has(raw.protocol as PresetProtocol)) {
     return badConfig('protocol must be openai, anthropic or responses')
   }
@@ -298,11 +506,12 @@ export const parsePresetConfig = (text: string): PresetConfig => {
   }
   return {
     schema: 1,
-    id: raw.id,
+    id,
     name,
     description: readOptionalText(raw.description, 'description'),
     author: readOptionalText(raw.author, 'author'),
     version: readOptionalText(raw.version, 'version'),
+    copyright: readCopyright(raw.copyright),
     protocol: raw.protocol as PresetProtocol,
     base_url: raw.base_url.trim().replace(/\/+$/, ''),
     model,
@@ -314,6 +523,82 @@ export const parsePresetConfig = (text: string): PresetConfig => {
     icon: readFileRef(raw.icon, 'icon'),
     license: readFileRef(raw.license, 'license'),
   }
+}
+
+/** 去掉值为 undefined 的键：默认预设的最小记录不落空字段（IndexedDB 会保留 undefined 属性） */
+const compactPresetConfig = (config: PresetConfig): PresetConfig => {
+  const next: PresetConfig = { schema: config.schema, id: config.id, name: config.name }
+  const optionalKeys = [
+    'description',
+    'author',
+    'version',
+    'copyright',
+    'builtin',
+    'protocol',
+    'base_url',
+    'model',
+    'params',
+    'system_prompt',
+    'system_prompt_file',
+    'compaction',
+    'memory',
+    'icon',
+    'license',
+  ] as const
+  for (const key of optionalKeys) {
+    const value = config[key]
+    if (value !== undefined) {
+      Object.assign(next, { [key]: value })
+    }
+  }
+  return next
+}
+
+/**
+ * 内置默认预设的解析：只要求 schema / id / name，其余字段「填了才覆盖」。
+ * 这是默认预设的独立保存路径，不放松 zip 与普通预设的必填校验。
+ */
+const parseDefaultPresetConfig = (raw: Record<string, unknown>): PresetConfig => {
+  const { id, name } = readIdentity(raw)
+  if (id !== DEFAULT_PRESET_ID) {
+    return badConfig(`default preset must use id ${DEFAULT_PRESET_ID}`)
+  }
+  return compactPresetConfig({
+    schema: 1,
+    id,
+    name,
+    description: readOptionalText(raw.description, 'description'),
+    author: readOptionalText(raw.author, 'author'),
+    version: readOptionalText(raw.version, 'version'),
+    copyright: readCopyright(raw.copyright),
+    builtin: true,
+    protocol: readOptionalProtocol(raw.protocol),
+    base_url: readOptionalBaseUrl(raw.base_url),
+    model: readOptionalModel(raw.model),
+    params: readPartialParams(raw.params),
+    system_prompt: readSystemPrompt(raw.system_prompt),
+    system_prompt_file: readOptionalText(raw.system_prompt_file, 'system_prompt_file'),
+    compaction: readPartialCompaction(raw.compaction),
+    memory: readPartialMemory(raw.memory),
+    icon: readFileRef(raw.icon, 'icon'),
+    license: readFileRef(raw.license, 'license'),
+  })
+}
+
+/** 解析并校验 preset 清单；zip 导入与普通预设的保存共用这一套规则。 */
+export const parsePresetConfig = (text: string): PresetConfig =>
+  parseFullPresetConfig(parseJsonObject(text))
+
+/**
+ * 保存手写 JSON 的入口：普通预设仍走严格校验；内置默认预设允许只含部分字段
+ * （留空的字段在运行时解析成系统默认）。
+ */
+export const parsePresetConfigForSave = (text: string): PresetConfig => {
+  const raw = parseJsonObject(text)
+  if (raw.id === DEFAULT_PRESET_ID) {
+    return parseDefaultPresetConfig(raw)
+  }
+  return parseFullPresetConfig(raw)
 }
 
 /** 只接受包内相对路径：允许 `/` 与 `\\` 混合，但拒绝绝对路径、盘符、`.`/`..` 与空段。 */

@@ -7,7 +7,7 @@ import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from 
 import { useSettings } from '../settings.js'
 import { MEMORY_TOOLS, runMemoryTool } from '../memory/store.js'
 import { DEFAULT_PRESET_COMPACTION } from '../preset/index.js'
-import { getActivePreset } from '../preset/store.js'
+import { getActivePreset, getActiveResolvedPreset } from '../preset/store.js'
 import { recordUsage } from '../usage/store.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
 import { runCompaction, type SummaryStream } from './compaction.js'
@@ -71,7 +71,7 @@ const serverTools = (search: boolean): CreateMessageRequest['tools'] => {
  * 关闭时返回空数组，请求里不会出现客户端 tools，行为与接入记忆前一致。
  */
 const memoryTools = (): ClientToolParam[] =>
-  getActivePreset()?.memory.enabled
+  getActiveResolvedPreset()?.memory.enabled
     ? MEMORY_TOOLS.map((tool) => ({
         name: tool.name,
         description: tool.description,
@@ -1080,7 +1080,7 @@ const prepareCompaction = async (
   if (!session) {
     return undefined
   }
-  const preset = getActivePreset()
+  const preset = getActiveResolvedPreset()
   const outcome = await runCompaction({
     sessionId,
     history,
