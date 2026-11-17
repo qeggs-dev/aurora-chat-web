@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslate } from '../../i18n/index.js'
 import { IconCloseOutline16 } from './icons.js'
@@ -17,6 +17,7 @@ export const Modal = ({
   closable = false,
   className,
   mainClassName,
+  style,
   onClose,
 }: {
   title: ReactNode
@@ -27,6 +28,8 @@ export const Modal = ({
   className?: string
   /** 内容区的 class */
   mainClassName?: string
+  /** 内容区的内联样式（样式包背景变量走这里） */
+  style?: CSSProperties
   onClose: () => void
 }) => {
   const t = useTranslate()
@@ -55,6 +58,7 @@ export const Modal = ({
     >
       <div
         className={clsx(styles.content, className)}
+        style={style}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

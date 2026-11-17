@@ -525,48 +525,31 @@
 }
 
 /*
- * 设置内容区按当前分组叠加背景：样式包把图片与 alpha / brightness 写进这些 CSS 变量，
- * 没有启用样式包时变量缺省，背景层保持透明、不遮挡内容。
+ * 设置弹窗铺满背景：变量由 SettingsDialog 按当前分组注入，
+ * 没有启用样式包时变量缺省，整卡保持原来的纯色底。
  */
-.contentGeneric,
-.contentDatas,
-.contentAbout {
+.dialog {
   position: relative;
+  overflow: hidden;
 }
 
-.contentGeneric::before,
-.contentDatas::before,
-.contentAbout::before {
+.dialog::before {
   content: '';
   position: absolute;
   inset: 0;
   z-index: 0;
+  border-radius: inherit;
+  background-image: var(--dslike-setting-image, none);
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
+  opacity: var(--dslike-setting-alpha, 1);
+  filter: brightness(var(--dslike-setting-brightness, 1));
   pointer-events: none;
 }
 
-.contentGeneric::before {
-  background-image: var(--dslike-bg-setting-generic-image, none);
-  opacity: var(--dslike-bg-setting-generic-alpha, 1);
-  filter: brightness(var(--dslike-bg-setting-generic-brightness, 1));
-}
-
-.contentDatas::before {
-  background-image: var(--dslike-bg-setting-datas-image, none);
-  opacity: var(--dslike-bg-setting-datas-alpha, 1);
-  filter: brightness(var(--dslike-bg-setting-datas-brightness, 1));
-}
-
-.contentAbout::before {
-  background-image: var(--dslike-bg-setting-about-image, none);
-  opacity: var(--dslike-bg-setting-about-alpha, 1);
-  filter: brightness(var(--dslike-bg-setting-about-brightness, 1));
-}
-
-/* 背景层在内容之下：内容子元素统一抬到背景之上 */
-.content > * {
+/* 卡片内容统一抬到背景之上 */
+.dialog > * {
   position: relative;
   z-index: 1;
 }

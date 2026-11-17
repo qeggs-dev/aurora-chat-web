@@ -162,6 +162,7 @@
 /* 有样式包背景时，分组标题不再是一条实色横带 */
 :global(html[data-style-pack]) .sectionHeader {
   background-color: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 38%, transparent);
+  border-radius: 10px;
   backdrop-filter: blur(10px);
 }
 

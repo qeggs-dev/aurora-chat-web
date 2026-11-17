@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   IconDarkOutline16,
   IconDataOutline16,
@@ -59,11 +59,24 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
 ]
 
 /** 内容区按分组叠加背景图；样式页本身不需要背景图，只用基础内容类 */
-const contentBackgrounds: Record<SettingsSection, string> = {
-  general: styles.contentGeneric,
-  data: styles.contentDatas,
-  style: '',
-  about: styles.contentAbout,
+/** 每个分组把对应槽位的背景变量映射到整卡背景上；没有样式包时变量为空，等同于无背景 */
+const settingBackgrounds: Record<SettingsSection, CSSProperties> = {
+  general: {
+    '--dslike-setting-image': 'var(--dslike-bg-setting-generic-image, none)',
+    '--dslike-setting-alpha': 'var(--dslike-bg-setting-generic-alpha, 1)',
+    '--dslike-setting-brightness': 'var(--dslike-bg-setting-generic-brightness, 1)',
+  } as CSSProperties,
+  data: {
+    '--dslike-setting-image': 'var(--dslike-bg-setting-datas-image, none)',
+    '--dslike-setting-alpha': 'var(--dslike-bg-setting-datas-alpha, 1)',
+    '--dslike-setting-brightness': 'var(--dslike-bg-setting-datas-brightness, 1)',
+  } as CSSProperties,
+  style: {},
+  about: {
+    '--dslike-setting-image': 'var(--dslike-bg-setting-about-image, none)',
+    '--dslike-setting-alpha': 'var(--dslike-bg-setting-about-alpha, 1)',
+    '--dslike-setting-brightness': 'var(--dslike-bg-setting-about-brightness, 1)',
+  } as CSSProperties,
 }
 
 const SettingsContent = () => {
@@ -84,6 +97,7 @@ const SettingsContent = () => {
         closable
         className={styles.dialog}
         mainClassName={styles.dialogMain}
+        style={settingBackgrounds[section]}
         onClose={() => {
           if (!historyDelete.busy) {
             closeSettings()
@@ -105,7 +119,7 @@ const SettingsContent = () => {
             </button>
           ))}
         </div>
-        <div role="tabpanel" className={clsx(styles.content, contentBackgrounds[section])}>
+        <div role="tabpanel" className={styles.content}>
           {section === 'general' ? (
             <>
               <ThemeSetting />
