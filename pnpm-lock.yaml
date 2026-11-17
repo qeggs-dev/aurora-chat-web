@@ -26,6 +26,9 @@ importers:
       clsx:
         specifier: 2.1.1
         version: 2.1.1
+      cordis:
+        specifier: 4.0.0-rc.13
+        version: 4.0.0-rc.13
       fflate:
         specifier: 0.8.3
         version: 0.8.3
@@ -491,6 +494,9 @@ packages:
       selfsigned:
         optional: true
 
+  '@standard-schema/spec@1.1.0':
+    resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
   '@swc/helpers@0.5.23':
     resolution: {integrity: sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw==}
 
@@ -792,11 +798,32 @@ packages:
   confbox@0.3.2:
     resolution: {integrity: sha512-ZUAKhKlkCOrIGKc8cj7zek9s9z1mveHif/25nUshI2BzCRzF7KH7KHa+Lnh2ubq+e1tIlaFuP763mzW4qVoehg==}
 
+  cordis@4.0.0-rc.13:
+    resolution: {integrity: sha512-rYsquBfrd1U8HuaDr/1TYpdnHiuy5X2oEWJbfEveIZwysfjg3vTXJWKvTPlaPtt2VeFsAJIrzHZnymONyOr3PA==}
+    hasBin: true
+    peerDependencies:
+      '@cordisjs/fs': ^2.0.0-rc.0
+      '@cordisjs/fs-node': ^0.1.0
+      '@cordisjs/include': ^2.0.0-rc.0
+      '@cordisjs/loader': ^1.0.0-rc.10
+    peerDependenciesMeta:
+      '@cordisjs/fs':
+        optional: true
+      '@cordisjs/fs-node':
+        optional: true
+      '@cordisjs/include':
+        optional: true
+      '@cordisjs/loader':
+        optional: true
+
   cose-base@1.0.3:
     resolution: {integrity: sha512-s9whTXInMSgAp/NVXVNuVxVKzGH2qck3aQlVHxDCdAEPgtMKwc4Wq6/QKhgdEdgbLSi9rBTAcPoRa6JpiG4ksg==}
 
   cose-base@2.2.0:
     resolution: {integrity: sha512-AzlgcsCbUMymkADOJtQm3wO9S3ltPfYOFD5033keQn9NJzIbtnZj+UdBJe7DYml/8TdbtHJW3j58SOnKhWY/5g==}
+
+  cosmokit@1.8.1:
+    resolution: {integrity: sha512-PDBv4l90xZKrUsZ0vtoycgZpO/j4iFsqJXrAxsyBDsnQRI7ZMJXIjgDJsKNjd5L8jnVnnlrDCdhkFbTncgCVjQ==}
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
@@ -1619,6 +1646,8 @@ snapshots:
       '@rspack/core': 2.0.2(@swc/helpers@0.5.23)
       '@rspack/dev-middleware': 2.0.6(@rspack/core@2.0.2(@swc/helpers@0.5.23))
 
+  '@standard-schema/spec@1.1.0': {}
+
   '@swc/helpers@0.5.23':
     dependencies:
       tslib: 2.9.1
@@ -1882,6 +1911,11 @@ snapshots:
 
   confbox@0.3.2: {}
 
+  cordis@4.0.0-rc.13:
+    dependencies:
+      '@standard-schema/spec': 1.1.0
+      cosmokit: 1.8.1
+
   cose-base@1.0.3:
     dependencies:
       layout-base: 1.0.2
@@ -1889,6 +1923,8 @@ snapshots:
   cose-base@2.2.0:
     dependencies:
       layout-base: 2.0.1
+
+  cosmokit@1.8.1: {}
 
   csstype@3.2.3: {}
 
