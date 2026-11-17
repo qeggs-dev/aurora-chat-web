@@ -29,6 +29,15 @@ const PROTOCOLS = new Set<PresetProtocol>(['openai', 'anthropic', 'responses'])
 const ICON_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'svg'])
 const PROMPT_EXT = new Set(['md', 'txt'])
 
+/**
+ * 默认路径候选（只影响清单里没写 file 时；显式路径仍然严格）。
+ * 大小写不敏感匹配，按顺序尝试，命中即用。
+ */
+const DEFAULT_ICON_PATHS = ['icon.png', 'icon.webp', 'icon.svg', 'icon.jpg', 'icon.jpeg'] as const
+const DEFAULT_LICENSE_PATHS = ['LICENSE', 'LICENSE.txt', 'LICENSE.md'] as const
+/** 没写 system_prompt_file、也没写内联 system_prompt 时，按顺序尝试这两个默认提示词文件 */
+const DEFAULT_PROMPT_PATHS = ['system_prompt.md', 'prompt.md'] as const
+
 const ICON_MIME: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -616,9 +625,11 @@ export const normalizeEntryPath = (path: string): string | null => {
 
 export type ParsedPreset = {
   config: PresetConfig
+  /** 包图标（显式 icon 或默认位置 icon.<ext>）；都没有时 undefined */
   icon?: Blob
+  /** 许可证全文（显式 license 或默认位置 LICENSE*）；都没有时 undefined */
   license?: string
-  /** system_prompt_file 的文本；启用时覆盖 config.system_prompt */
+  /** system_prompt_file（显式或默认 system_prompt.md / prompt.md）的文本；启用时覆盖 config.system_prompt */
   promptText?: string
 }
 
@@ -656,10 +667,38 @@ export const parsePresetZip = async (file: File): Promise<ParsedPreset> => {
     paths.set(normalized, entries[name])
   }
 
-  // 清单必须位于根目录：子目录里的同名文件不算
-  const configPath = [...paths.keys()].find(
-    (name) => !name.includes('/') && name.toLowerCase() === CONFIG_FILE
-  )
+  // 大小写不敏感索引：小写归一化路径 → 真实条目名（读取一律用真实条目名，zip 内容字节不变）
+  const lowerPaths = new Map<string, string>()
+  for (const name of paths.keys()) {
+    const key = name.toLowerCase()
+    if (!lowerPaths.has(key)) {
+      lowerPaths.set(key, name)
+    }
+  }
+
+  /** 按候选路径（大小写不敏感）找第一个命中的真实条目名 */
+  const findEntry = (candidates: readonly string[]): string | undefined => {
+    for (const candidate of candidates) {
+      const actual = lowerPaths.get(candidate.toLowerCase())
+      if (actual) {
+        return actual
+      }
+    }
+    return undefined
+  }
+
+  /** 显式路径：文件必须存在，否则报 missingFile（显式路径错误不回退默认位置） */
+  const requireEntry = (file: string): string => {
+    const path = normalizeEntryPath(file)
+    const actual = path ? lowerPaths.get(path.toLowerCase()) : undefined
+    if (!actual) {
+      throw new PresetError('missingFile', file)
+    }
+    return actual
+  }
+
+  // 清单必须位于根目录：小写索引键不带 `/` 即根目录条目，子目录里的同名文件不算
+  const configPath = lowerPaths.get(CONFIG_FILE)
   if (!configPath) {
     throw new PresetError('noConfig')
   }
@@ -673,25 +712,33 @@ export const parsePresetZip = async (file: File): Promise<ParsedPreset> => {
     return copy
   }
 
+  /** 读取 icon：显式 icon 严格（缺失报 missingFile）；没写时按默认 icon.<ext> 查找 */
   let icon: Blob | undefined
   if (config.icon) {
-    const path = normalizeEntryPath(config.icon.file)
-    if (!path || !paths.has(path)) {
-      throw new PresetError('missingFile', config.icon.file)
-    }
+    const path = requireEntry(config.icon.file)
     const ext = extensionOf(path)
     if (!ICON_EXT.has(ext)) {
       throw new PresetError('badFileType', config.icon.file)
     }
     icon = new Blob([bytesOf(path)], { type: ICON_MIME[ext] })
+    config.icon = { file: path }
+  } else {
+    const path = findEntry(DEFAULT_ICON_PATHS)
+    if (path) {
+      const ext = extensionOf(path)
+      icon = new Blob([bytesOf(path)], { type: ICON_MIME[ext] })
+      config.icon = { file: path }
+    }
   }
 
+  /**
+   * 读取 system prompt 文件：
+   * - 显式 system_prompt_file 严格（缺失 / 类型不符 / 超限都报错）；
+   * - 没写时：若也没有内联 system_prompt，按顺序尝试默认文件 system_prompt.md / prompt.md。
+   */
   let promptText: string | undefined
   if (config.system_prompt_file) {
-    const path = normalizeEntryPath(config.system_prompt_file)
-    if (!path || !paths.has(path)) {
-      throw new PresetError('missingFile', config.system_prompt_file)
-    }
+    const path = requireEntry(config.system_prompt_file)
     if (!PROMPT_EXT.has(extensionOf(path))) {
       throw new PresetError('badFileType', config.system_prompt_file)
     }
@@ -700,20 +747,34 @@ export const parsePresetZip = async (file: File): Promise<ParsedPreset> => {
       throw new PresetError('tooLarge', config.system_prompt_file)
     }
     promptText = new TextDecoder().decode(bytes)
+    config.system_prompt_file = path
+  } else if (!config.system_prompt) {
+    const path = findEntry(DEFAULT_PROMPT_PATHS)
+    if (path) {
+      const bytes = paths.get(path) as Uint8Array
+      if (bytes.length > MAX_PROMPT_BYTES) {
+        throw new PresetError('tooLarge', path)
+      }
+      promptText = new TextDecoder().decode(bytes)
+      config.system_prompt_file = path
+    }
   }
 
+  /** 读取 license：显式 license 严格；没写时按默认位置 LICENSE / LICENSE.txt / LICENSE.md 查找 */
   let license: string | undefined
-  if (config.license) {
-    const path = normalizeEntryPath(config.license.file)
-    if (!path || !paths.has(path)) {
-      throw new PresetError('missingFile', config.license.file)
-    }
+  const licensePath = config.license
+    ? requireEntry(config.license.file)
+    : findEntry(DEFAULT_LICENSE_PATHS)
+  if (licensePath) {
+    const path = licensePath
     const bytes = paths.get(path) as Uint8Array
     if (bytes.length > MAX_LICENSE_BYTES) {
-      throw new PresetError('tooLarge', config.license.file)
+      throw new PresetError('tooLarge', path)
     }
     license = new TextDecoder().decode(bytes)
+    config.license = { file: path }
   }
 
+  // 解析结果里的 file 已补齐（显式值或默认位置），下游 / IndexedDB 不需要再做默认路径查找
   return { config, icon, license, promptText }
 }

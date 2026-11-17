@@ -176,7 +176,8 @@ export const isSafePosition = (value: unknown): value is string =>
   typeof value === 'string' && POSITION_PATTERN.test(value) && !POSITION_FORBIDDEN.test(value)
 
 /**
- * assets 项：`file` 必填，其余可选。
+ * assets 项（解析后的清单）：`file` 一定是包内实际文件路径——导入时显式值优先，
+ * 没写则按默认路径约定找到并补进来；找不到默认位置的资源不会出现在清单里。
  * `alpha` / `exposure` 只对图片有效；`fit` / `align` / `render` 见 README 的样式包规范。
  */
 export type StyleAssetEntry = {
@@ -192,6 +193,12 @@ export type StyleAssetEntry = {
   effects?: StyleEffects
 }
 
+/**
+ * index.json 里 assets 项的原始写法（zip 解析输入）：
+ * `file` 可省略，省略时按「默认路径约定」在包内查找（见 README「默认路径」）。
+ */
+export type StyleAssetEntryInput = Omit<StyleAssetEntry, 'file'> & { file?: string }
+
 /** 按主题分组的图片 Blob（包图标 / 封面）；缺某个主题表示该主题没有这张图 */
 export type ThemedBlobs = { light?: Blob; dark?: Blob }
 
@@ -201,16 +208,25 @@ export type ThemedUrls = { light?: string; dark?: string }
 /** 单个主题下的包图标 / 封面文件（effects 可按主题不同） */
 export type StyleThemeFileRef = { file: string; effects?: StyleEffects }
 
+/** index.json 里主题项的原始写法：`file` 可省略，省略时按该主题的默认位置查找 */
+export type StyleThemeFileRefInput = { file?: string; effects?: StyleEffects }
+
 /** 主题无关的单文件形式：亮/暗主题共用同一张图 */
 export type StylePlainFileRef = { file: string; effects?: StyleEffects }
 
+/** index.json 里主题无关写法的原始形式：`file` 可省略（按默认位置查找） */
+export type StylePlainFileRefInput = { file?: string; effects?: StyleEffects }
+
 /**
- * 顶层 `icon` / `cover` 的引用，支持两种写法：
+ * 顶层 `icon` / `cover` 解析后的引用，支持两种写法：
  *
  * - 主题无关：`{ "file": "icon.png", "effects": {...} }` —— 两个主题共用同一张图；
  * - 按主题：`{ "light": { "file": "light/icon.png" }, "dark": { "file": "dark/icon.png" } }`
  *   —— 每个主题可给不同文件；某个主题缺失文件时回退到同级的 `file`（都没有则该主题无图，
  *   不跨主题借用）。包级 `effects` 两个主题共用，写在主题项里的 `effects` 覆盖包级值。
+ *
+ * 解析结果里出现的主题项都带 `file`（显式值或默认路径补全）；索引里的原始写法
+ * （file 可省略）见 StyleFileRefInput。
  */
 export type StyleThemedFileRef = {
   light?: StyleThemeFileRef
@@ -220,6 +236,16 @@ export type StyleThemedFileRef = {
 }
 
 export type StyleFileRef = StylePlainFileRef | StyleThemedFileRef
+
+/** index.json 里 `icon` / `cover` 的原始写法：所有 `file` 都可省略（按默认位置查找） */
+export type StyleThemedFileRefInput = {
+  light?: StyleThemeFileRefInput
+  dark?: StyleThemeFileRefInput
+  file?: string
+  effects?: StyleEffects
+}
+
+export type StyleFileRefInput = StylePlainFileRefInput | StyleThemedFileRefInput
 
 /** 是否按主题分开了文件：只有出现 light / dark 时才算；只写 file 的仍按主题无关处理 */
 export const isThemedFileRef = (ref: StyleFileRef): ref is StyleThemedFileRef =>
@@ -394,10 +420,13 @@ export type StyleManifest = {
   author?: string
   version?: string
   sidebarTitle?: string
-  /** 包图标：可带静态 effects（tilt 报 badConfig）；`file` 或 `light` / `dark` 两种写法 */
+  /**
+   * 包图标：解析后的引用（file 为包内实际路径）。可带静态 effects（tilt 报 badConfig）；
+   * `file` 或 `light` / `dark` 两种写法；导入时显式值优先，否则按默认路径补齐。
+   */
   icon?: StyleFileRef
   /**
-   * 详情页封面（可选）：整页背景，亮/暗主题可各给一张。
+   * 详情页封面（可选）：整页背景，亮/暗主题可各给一张；解析后的引用（file 为实际路径）。
    * 仍接受静态 effects 与 tilt（旧包兼容），但整页背景只让 window / zoom 改变取图；
    * opacity / shadow / 光效 / tilt 对铺满内容区的背景不再产生视觉效果（README 已说明）。
    */
@@ -405,6 +434,19 @@ export type StyleManifest = {
   license?: { file: string }
   color_palette?: StylePalette
   assets: Record<string, StyleAssetEntry>
+}
+
+/**
+ * index.json 的原始结构（zip 解析输入）：所有 `file` 字段都可省略。
+ * 省略时按默认路径约定解析（显式值 > 默认位置）；解析完成后输出 StyleManifest，
+ * 其中的 file 已补成包内实际条目名。
+ */
+export type StyleManifestInput = Omit<StyleManifest, 'icon' | 'cover' | 'license' | 'assets'> & {
+  icon?: StyleFileRefInput
+  cover?: StyleFileRefInput
+  /** `{ file }` 或 `{}`（`{}` 与省略一样按默认位置查找 LICENSE） */
+  license?: { file?: string }
+  assets: Record<string, StyleAssetEntryInput>
 }
 
 /** 设置页列表用的摘要；详情页需要的完整清单与许可证也在这里带出，避免再次读 IndexedDB */

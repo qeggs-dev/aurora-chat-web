@@ -50,7 +50,11 @@ export type PresetMemory = {
   max_results: number
 }
 
-/** zip 内文件的引用；缺省表示不使用该文件 */
+/**
+ * zip 内文件的引用。清单里可以省略（或不写该字段）：
+ * 导入时会按「默认路径约定」查找（icon.<ext> / LICENSE / system_prompt.md …），
+ * 找不到则该资源视为未提供；显式写出但文件不存在仍报 missingFile。
+ */
 export type PresetFileRef = { file: string }
 
 /** 内置默认预设 id：开机即存在、不可删除，也不能被导入的同 id 包覆盖 */
@@ -86,11 +90,17 @@ export type PresetConfig = {
   params?: Partial<PresetParams>
   /** 内联 system prompt；缺省时用应用自带 */
   system_prompt?: string
-  /** zip 内 system prompt 文件的相对路径，文件优先于 system_prompt；不在会由解析器读成 promptText */
+  /**
+   * zip 内 system prompt 文件的相对路径，文件优先于 system_prompt；内容由解析器读成 promptText。
+   * 缺省时：只有内联 system_prompt 也为空，才按顺序尝试默认文件 system_prompt.md / prompt.md；
+   * 显式写出但文件不存在仍报 missingFile（不回退默认文件）。
+   */
   system_prompt_file?: string
   compaction?: Partial<PresetCompaction>
   memory?: Partial<PresetMemory>
+  /** 包图标：缺省时按默认路径 icon.<ext>（png/webp/svg/jpg/jpeg）查找，找不到视为未提供 */
   icon?: PresetFileRef
+  /** 许可证：缺省时按默认位置 LICENSE / LICENSE.txt / LICENSE.md 查找，找不到视为未提供 */
   license?: PresetFileRef
 }
 
@@ -168,7 +178,9 @@ export const isDefaultPresetId = (id: string): boolean => id === DEFAULT_PRESET_
 
 /** 是否为内置预设（默认预设或后续内置演示包） */
 export const isBuiltinPreset = (config: PresetConfig | null | undefined): boolean =>
-  config !== null && config !== undefined && (config.id === DEFAULT_PRESET_ID || config.builtin === true)
+  config !== null &&
+  config !== undefined &&
+  (config.id === DEFAULT_PRESET_ID || config.builtin === true)
 
 const definedKeys = <T extends object>(value: T | undefined): Set<keyof T> => {
   const keys = new Set<keyof T>()

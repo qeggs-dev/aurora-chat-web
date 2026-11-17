@@ -14,20 +14,27 @@ import type {
   PaletteColors,
   StyleAlign,
   StyleAssetEntry,
+  StyleAssetEntryInput,
   StyleEffects,
   StyleEmbossEffect,
   StyleFileRef,
+  StyleFileRefInput,
   StyleFit,
   StyleGlowEffect,
   StyleManifest,
+  StyleManifestInput,
   StylePalette,
+  StylePlainFileRefInput,
   StyleRender,
   StyleShadowEffect,
   StyleStrokeEffect,
   StyleThemeFileRef,
+  StyleThemeFileRefInput,
   StyleThemedFileRef,
+  StyleThemedFileRefInput,
   StyleTiltEffect,
   StyleWindowEffect,
+  Theme,
   ThemedBlobs,
 } from './types.js'
 
@@ -59,11 +66,28 @@ const MAX_LICENSE_BYTES = 200 * 1024
 /** 详情页封面单独限制 5 MB（比普通图片更严，避免列表刷新时生成过大的 objectURL） */
 const MAX_COVER_BYTES = 5 * 1024 * 1024
 
-const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'avif'])
+/**
+ * 默认路径的扩展名候选顺序（只影响「没写 file 时按默认位置查找」；
+ * 显式 file 仍按下面的扩展名集合校验，顺序无关）。
+ */
+const IMAGE_EXT_ORDER = ['png', 'webp', 'jpg', 'jpeg', 'gif', 'svg', 'avif'] as const
 /** 封面只接受这五种扩展名（与 README 的 cover 说明一致） */
-const COVER_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'svg'])
-const FONT_EXT = new Set(['ttf', 'otf', 'woff', 'woff2'])
+const COVER_EXT_ORDER = ['png', 'webp', 'jpg', 'jpeg', 'svg'] as const
+const FONT_EXT_ORDER = ['ttf', 'otf', 'woff', 'woff2'] as const
+
+const IMAGE_EXT = new Set<string>(IMAGE_EXT_ORDER)
+const COVER_EXT = new Set<string>(COVER_EXT_ORDER)
+const FONT_EXT = new Set<string>(FONT_EXT_ORDER)
 const TEXT_EXT = new Set(['txt', 'md', 'license'])
+
+/** 包级 license 的默认位置：大小写不敏感匹配，按顺序尝试 */
+const LICENSE_DEFAULT_CANDIDATES = [
+  'LICENSE',
+  'LICENSE.txt',
+  'LICENSE.md',
+  'license',
+  'license.md',
+] as const
 
 const extensionOf = (name: string): string => {
   const dot = name.lastIndexOf('.')
@@ -337,14 +361,14 @@ const readBackgroundEffects = (raw: unknown, field: string): StyleEffects | unde
 /** 顶层 icon / cover 允许出现的键（未知键忽略并 warn，帮助包作者发现拼写错误） */
 const MANIFEST_IMAGE_KEYS = ['file', 'light', 'dark', 'effects'] as const
 
-/** 单个主题的 icon / cover 项：必须有非空 file；effects 允许 tilt 时按封面规则校验 */
-const readThemeImage = (
+/** 单个主题的 icon / cover 项（原始输入）：file 可省略；effects 允许 tilt 时按封面规则校验 */
+const readThemeImageInput = (
   raw: unknown,
   field: string,
   allowTilt: boolean
-): StyleThemeFileRef => {
+): StyleThemeFileRefInput => {
   if (!isPlainObject(raw)) {
-    throw new StylePackError('badIndex', `${field} must be an object with a file`)
+    throw new StylePackError('badIndex', `${field} must be an object`)
   }
   const record = raw
   for (const key of Object.keys(record)) {
@@ -352,24 +376,31 @@ const readThemeImage = (
       warn(`[style-pack] ${field}.${key} 是未知字段，已忽略`)
     }
   }
-  if (typeof record.file !== 'string' || !record.file) {
+  if (record.file !== undefined && (typeof record.file !== 'string' || !record.file)) {
     throw new StylePackError('badIndex', `${field}.file must be a string`)
   }
   const effects = readEffects(record.effects, field, allowTilt)
-  return effects ? { file: record.file, effects } : { file: record.file }
+  const ref: StyleThemeFileRefInput = {}
+  if (record.file !== undefined) {
+    ref.file = record.file as string
+  }
+  if (effects) {
+    ref.effects = effects
+  }
+  return ref
 }
 
 /**
- * 清单里的 icon / cover：兼容两种写法。
- * - `{ file, effects? }`：主题无关，两个主题共用；
+ * 清单里的 icon / cover（原始输入）：兼容两种写法。
+ * - `{ file?, effects? }`：主题无关，两个主题共用（file 省略时按默认位置查找）；
  * - `{ light?, dark?, file?, effects? }`：按主题给文件，`file` 作为两主题兜底；
- *   主题项内可各带 effects（覆盖包级值）。
+ *   主题项内可各带 effects（覆盖包级值），每项的 file 也可省略（按该主题默认位置查找）。
  * 结构错误统一报 badIndex（与旧行为一致），effects 非法仍报 badConfig 并带字段名。
  */
-const readManifestImage = (
+const readManifestImageInput = (
   value: unknown,
   field: 'icon' | 'cover'
-): StyleFileRef | undefined => {
+): StyleFileRefInput | undefined => {
   if (value === undefined) {
     return undefined
   }
@@ -387,20 +418,23 @@ const readManifestImage = (
   }
   const allowTilt = field === 'cover'
   const sharedEffects = readEffects(record.effects, field, allowTilt)
-  // 只写 file（含旧版字符串写法）时两个主题共用；出现 light/dark 才按主题拆
+  // 只写 file / effects（含旧版字符串写法）时两个主题共用；出现 light/dark 才按主题拆
   if (record.light === undefined && record.dark === undefined) {
-    const file = record.file as string | undefined
-    if (!file) {
-      throw new StylePackError('badIndex', `${field}.file must be a string`)
+    const ref: StylePlainFileRefInput = {}
+    if (record.file !== undefined) {
+      ref.file = record.file as string
     }
-    return sharedEffects ? { file, effects: sharedEffects } : { file }
+    if (sharedEffects) {
+      ref.effects = sharedEffects
+    }
+    return ref
   }
-  const ref: StyleThemedFileRef = {}
+  const ref: StyleThemedFileRefInput = {}
   if (record.light !== undefined) {
-    ref.light = readThemeImage(record.light, `${field}.light`, allowTilt)
+    ref.light = readThemeImageInput(record.light, `${field}.light`, allowTilt)
   }
   if (record.dark !== undefined) {
-    ref.dark = readThemeImage(record.dark, `${field}.dark`, allowTilt)
+    ref.dark = readThemeImageInput(record.dark, `${field}.dark`, allowTilt)
   }
   if (record.file !== undefined) {
     ref.file = record.file as string
@@ -409,6 +443,29 @@ const readManifestImage = (
     ref.effects = sharedEffects
   }
   return ref
+}
+
+/**
+ * 顶层 license（原始输入）：`{ file }` / `{}` / 旧版字符串写法。
+ * file 可省略，省略时按默认位置（LICENSE / LICENSE.txt / LICENSE.md ...）查找。
+ */
+const readLicenseInput = (value: unknown): { file?: string } | undefined => {
+  if (value === undefined) {
+    return undefined
+  }
+  const record = typeof value === 'string' ? { file: value } : value
+  if (!isPlainObject(record)) {
+    throw new StylePackError('badIndex', 'license must be an object with a file')
+  }
+  for (const key of Object.keys(record)) {
+    if (key !== 'file') {
+      warn(`[style-pack] license.${key} 是未知字段，已忽略`)
+    }
+  }
+  if (record.file !== undefined && (typeof record.file !== 'string' || !record.file)) {
+    throw new StylePackError('badIndex', 'license.file must be a string')
+  }
+  return record.file === undefined ? {} : { file: record.file as string }
 }
 
 /**
@@ -591,7 +648,85 @@ export const normalizeEntryPath = (path: string): string | null => {
   return parts.join('/')
 }
 
+/** 按「位置优先 × 扩展名顺序」展开默认路径候选：先试完第一个位置的全部扩展名，再试下一个位置 */
+const candidatePaths = (bases: readonly string[], exts: readonly string[]): string[] =>
+  bases.flatMap((base) => exts.map((ext) => `${base}.${ext}`))
+
+/**
+ * assets 槽位的默认路径候选（由资源 ID 推出）：
+ * - `background.<name>.<theme>` → `assets/<theme>/<name>.<ext>`、`assets/<name>.<ext>`
+ * - `icon.<name>.<theme>`       → `assets/icons/<theme>/<name>.<ext>`、`assets/<theme>/<name>.<ext>`、`assets/icons/<name>.<ext>`
+ * - `font.<theme>`              → `assets/font.<ext>`、`font.<ext>`
+ *
+ * 其它 ID（没有主题后缀 / 不属于以上类别）没有默认路径，返回空数组。
+ */
+const assetDefaultPaths = (assetId: string): string[] => {
+  const prefix = `${STYLE_PREFIX}.`
+  if (!assetId.startsWith(prefix)) {
+    return []
+  }
+  const themed = /^(.*)\.(light|dark)$/.exec(assetId.slice(prefix.length))
+  if (!themed) {
+    return []
+  }
+  const slot = themed[1]
+  const theme = themed[2] as Theme
+  if (slot === 'font') {
+    return candidatePaths(['assets/font', 'font'], FONT_EXT_ORDER)
+  }
+  if (slot.startsWith('background.')) {
+    const name = slot.slice('background.'.length)
+    return name
+      ? candidatePaths([`assets/${theme}/${name}`, `assets/${name}`], IMAGE_EXT_ORDER)
+      : []
+  }
+  if (slot.startsWith('icon.')) {
+    const name = slot.slice('icon.'.length)
+    return name
+      ? candidatePaths(
+          [`assets/icons/${theme}/${name}`, `assets/${theme}/${name}`, `assets/icons/${name}`],
+          IMAGE_EXT_ORDER
+        )
+      : []
+  }
+  return []
+}
+
+/** 包级 icon / cover 的默认路径候选（主题目录优先，根目录兜底） */
+const manifestDefaultPaths = (kind: 'icon' | 'cover', theme: Theme): string[] =>
+  candidatePaths(
+    [`assets/${theme}/${kind}`, kind],
+    kind === 'cover' ? COVER_EXT_ORDER : IMAGE_EXT_ORDER
+  )
+
+/**
+ * 把两个主题的 icon / cover 解析结果归一化：
+ * - 两主题都没有 → undefined；
+ * - 只有一个主题命中 → 主题无关写法（两个主题共用，与展示层「缺主题回退另一主题」一致）；
+ * - 两主题同文件且 effects 相同 → 主题无关写法；否则输出按主题写法。
+ */
+const collapseManifestImages = (
+  light: StyleThemeFileRef | undefined,
+  dark: StyleThemeFileRef | undefined
+): StyleFileRef | undefined => {
+  if (light && dark) {
+    if (
+      light.file !== dark.file ||
+      JSON.stringify(light.effects) !== JSON.stringify(dark.effects)
+    ) {
+      const themed: StyleThemedFileRef = { light, dark }
+      return themed
+    }
+  }
+  const only = light ?? dark
+  if (!only) {
+    return undefined
+  }
+  return only.effects ? { file: only.file, effects: only.effects } : { file: only.file }
+}
+
 export type ParsedStylePack = {
+  /** 解析后的清单：icon / cover / license / assets 的 file 都已补齐为包内实际条目名 */
   manifest: StyleManifest
   /** assetId → 文件（已按主题后缀的完整 ID 建键） */
   assets: Record<string, { blob: Blob; alpha: number; exposure: number; kind: 'image' | 'font' }>
@@ -603,7 +738,7 @@ export type ParsedStylePack = {
   ignored: string[]
 }
 
-const readManifest = (text: string): StyleManifest => {
+const readManifestInput = (text: string): StyleManifestInput => {
   let raw: unknown
   try {
     raw = JSON.parse(text)
@@ -634,22 +769,15 @@ const readManifest = (text: string): StyleManifest => {
     }
     const field = `assets["${assetId}"]`
     readAssetOptions(entry as Record<string, unknown>, field)
+    const assetEntry = entry as StyleAssetEntryInput
+    if (assetEntry.file !== undefined && typeof assetEntry.file !== 'string') {
+      throw new StylePackError('badIndex', `${field}.file must be a string`)
+    }
     // position 只在 align=custom 时生效：其它情况忽略并提示一次，不留在净化后的清单里
-    const assetEntry = entry as StyleAssetEntry
     if (assetEntry.position !== undefined && assetEntry.align !== 'custom') {
       warn(`[style-pack] ${field}.position 只在 align="custom" 时生效，已忽略`)
       assetEntry.position = undefined
     }
-  }
-  const ref = (value: unknown, field: string): string | undefined => {
-    if (value === undefined) {
-      return undefined
-    }
-    const file = typeof value === 'string' ? value : (value as { file?: unknown } | null)?.file
-    if (typeof file !== 'string' || !file) {
-      throw new StylePackError('badIndex', `${field}.file must be a string`)
-    }
-    return file
   }
   const colorPalette = readColorPalette(record.color_palette)
   return {
@@ -660,13 +788,11 @@ const readManifest = (text: string): StyleManifest => {
     author: readOptionalText(record.author, 'author', false),
     version: readOptionalText(record.version, 'version', false),
     sidebarTitle: readSidebarTitle(record.sidebarTitle),
-    icon: readManifestImage(record.icon, 'icon'),
-    cover: readManifestImage(record.cover, 'cover'),
-    license: ref(record.license, 'license')
-      ? { file: ref(record.license, 'license') as string }
-      : undefined,
+    icon: readManifestImageInput(record.icon, 'icon'),
+    cover: readManifestImageInput(record.cover, 'cover'),
+    license: readLicenseInput(record.license),
     color_palette: colorPalette,
-    assets: assets as Record<string, StyleAssetEntry>,
+    assets: assets as Record<string, StyleAssetEntryInput>,
   }
 }
 
@@ -703,11 +829,41 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
     paths.set(normalized, entries[name])
   }
 
-  const indexPath = [...paths.keys()].find((name) => name.toLowerCase() === 'index.json')
+  // 大小写不敏感索引：小写归一化路径 → 真实条目名（读取一律用真实条目名，zip 内容字节不变）
+  const lowerPaths = new Map<string, string>()
+  for (const name of paths.keys()) {
+    const key = name.toLowerCase()
+    if (!lowerPaths.has(key)) {
+      lowerPaths.set(key, name)
+    }
+  }
+
+  /** 按候选路径（大小写不敏感）找第一个命中的真实条目名 */
+  const findEntry = (candidates: readonly string[]): string | undefined => {
+    for (const candidate of candidates) {
+      const actual = lowerPaths.get(candidate.toLowerCase())
+      if (actual) {
+        return actual
+      }
+    }
+    return undefined
+  }
+
+  /** 显式路径：文件必须存在，否则报 missingFile（显式路径错误不回退默认位置） */
+  const requireEntry = (file: string): string => {
+    const path = normalizeEntryPath(file)
+    const actual = path ? lowerPaths.get(path.toLowerCase()) : undefined
+    if (!actual) {
+      throw new StylePackError('missingFile', file)
+    }
+    return actual
+  }
+
+  const indexPath = findEntry(['index.json'])
   if (!indexPath) {
     throw new StylePackError('noIndex')
   }
-  const manifest = readManifest(new TextDecoder().decode(paths.get(indexPath) as Uint8Array))
+  const input = readManifestInput(new TextDecoder().decode(paths.get(indexPath) as Uint8Array))
 
   // TS 的 Uint8Array<ArrayBufferLike> 与 BlobPart 不兼容，这里复制一份有独立 ArrayBuffer 的副本
   const bytesOf = (name: string): Uint8Array<ArrayBuffer> => {
@@ -726,22 +882,21 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
    * 读取并校验 icon / cover 的单个文件：路径规则、图片扩展名、封面 5 MB 上限都不变；
    * 返回的 Blob 按路径缓存，主题间同文件共享。
    */
-  const readManifestBlob = (file: string, kind: 'icon' | 'cover'): Blob => {
-    const path = normalizeEntryPath(file)
-    if (!path || !paths.has(path)) {
-      throw new StylePackError('missingFile', file)
+  const readManifestBlob = (path: string, kind: 'icon' | 'cover'): Blob => {
+    const bytes = paths.get(path)
+    if (!bytes) {
+      throw new StylePackError('missingFile', path)
     }
     const ext = extensionOf(path)
     if (kind === 'cover') {
       if (!COVER_EXT.has(ext)) {
-        throw new StylePackError('badFileType', file)
+        throw new StylePackError('badFileType', path)
       }
-      const bytes = paths.get(path) as Uint8Array
       if (bytes.length > MAX_COVER_BYTES) {
-        throw new StylePackError('badConfig', `cover file exceeds 5 MB: ${file}`)
+        throw new StylePackError('badConfig', `cover file exceeds 5 MB: ${path}`)
       }
     } else if (!IMAGE_EXT.has(ext)) {
-      throw new StylePackError('badFileType', file)
+      throw new StylePackError('badFileType', path)
     }
     const cached = manifestBlobCache.get(path)
     if (cached) {
@@ -753,12 +908,77 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
   }
 
   /**
-   * 按主题解析 icon / cover：
-   * - 主题无关写法 → 两个主题指向同一个 Blob；
-   * - 按主题写法 → 每个主题取自己的文件；该主题缺文件时用包级 `file` 兜底；
-   *   都没有则该主题没有图（不跨主题借用，UI 层展示时才允许回退另一主题）。
+   * 按默认路径约定解析 icon / cover（输入 ref 里的 file 可能省略）：
+   * - 主题项显式 file：严格读取，缺失报 missingFile（不回退）；
+   * - 没写 file：该主题默认位置（`assets/<theme>/<kind>.<ext>`、`<kind>.<ext>`）→
+   *   包级显式 file（沿用现有回退规则）→ 另一主题的默认位置；
+   * - 完全没写 icon / cover：两个主题都按默认位置查找。
+   * 两主题最终同文件且 effects 相同时归一化成主题无关写法。
    */
-  const resolveManifestImages = (
+  const resolveManifestRef = (
+    rawRef: StyleFileRefInput | undefined,
+    kind: 'icon' | 'cover'
+  ): StyleFileRef | undefined => {
+    const themedRef: StyleThemedFileRefInput | undefined =
+      rawRef !== undefined && ('light' in rawRef || 'dark' in rawRef) ? rawRef : undefined
+    const defaultsFor = (theme: Theme): string | undefined =>
+      findEntry(manifestDefaultPaths(kind, theme))
+
+    let packageFile: string | undefined
+    let packageFileRead = false
+    /** 包级显式 file 只在该主题真的需要兜底时才读取与校验（保持旧行为：没用到就不校验） */
+    const packageFallback = (): string | undefined => {
+      if (themedRef?.file === undefined) {
+        return undefined
+      }
+      if (!packageFileRead) {
+        packageFileRead = true
+        packageFile = requireEntry(themedRef.file)
+      }
+      return packageFile
+    }
+
+    const resolveTheme = (
+      theme: Theme,
+      item: StyleThemeFileRefInput | undefined
+    ): StyleThemeFileRef | undefined => {
+      const other = theme === 'light' ? 'dark' : 'light'
+      const file =
+        (item?.file !== undefined ? requireEntry(item.file) : undefined) ??
+        defaultsFor(theme) ??
+        packageFallback() ??
+        defaultsFor(other)
+      if (!file) {
+        return undefined
+      }
+      const effects = item?.effects ?? rawRef?.effects
+      return effects ? { file, effects } : { file }
+    }
+
+    if (rawRef === undefined) {
+      return collapseManifestImages(
+        resolveTheme('light', undefined),
+        resolveTheme('dark', undefined)
+      )
+    }
+    if (!themedRef) {
+      if (rawRef.file !== undefined) {
+        const file = requireEntry(rawRef.file)
+        return rawRef.effects ? { file, effects: rawRef.effects } : { file }
+      }
+      return collapseManifestImages(
+        resolveTheme('light', undefined),
+        resolveTheme('dark', undefined)
+      )
+    }
+    return collapseManifestImages(
+      resolveTheme('light', themedRef.light),
+      resolveTheme('dark', themedRef.dark)
+    )
+  }
+
+  /** 把解析后的 icon / cover 引用读成按主题的 Blob（主题无关写法两个主题共用同一个 Blob） */
+  const readManifestBlobs = (
     ref: StyleFileRef | undefined,
     kind: 'icon' | 'cover'
   ): ThemedBlobs => {
@@ -772,21 +992,36 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
     }
     for (const theme of ['light', 'dark'] as const) {
       const file = ref[theme]?.file ?? ref.file
-      if (!file) {
-        continue
+      if (file) {
+        blobs[theme] = readManifestBlob(file, kind)
       }
-      blobs[theme] = readManifestBlob(file, kind)
     }
     return blobs
   }
 
   const assets: ParsedStylePack['assets'] = {}
+  const resolvedAssets: Record<string, StyleAssetEntry> = {}
   const ignored: string[] = []
-  for (const [assetId, entry] of Object.entries(manifest.assets)) {
-    const path = normalizeEntryPath(entry?.file ?? '')
-    if (!path || !paths.has(path)) {
-      throw new StylePackError('missingFile', entry?.file ?? assetId)
+  for (const [assetId, rawEntry] of Object.entries(input.assets)) {
+    if (!isPlainObject(rawEntry)) {
+      // 结构问题沿用 missingFile，避免改变既有错误码
+      throw new StylePackError('missingFile', assetId)
     }
+    const entry = rawEntry as StyleAssetEntryInput
+    let path: string
+    if (entry.file !== undefined) {
+      // 显式路径严格：文件不存在报 missingFile，不静默回退默认位置
+      path = requireEntry(entry.file)
+    } else {
+      const found = findEntry(assetDefaultPaths(assetId))
+      if (!found) {
+        warn(`[style-pack] ${assetId} 没有写 file，默认位置也没有对应文件，已跳过该资源`)
+        continue
+      }
+      path = found
+    }
+    // 解析后的清单项带实际条目名，后续校验 / 消费与旧包完全一致
+    const resolved: StyleAssetEntry = { ...entry, file: path }
     const ext = extensionOf(path)
     if (IMAGE_EXT.has(ext)) {
       const alpha =
@@ -800,12 +1035,10 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
       assets[assetId] = { blob: blobOf(path, MIME[ext]), alpha, exposure, kind: 'image' }
       if (assetId.startsWith(`${STYLE_PREFIX}.background.`)) {
         // 背景是铺满容器的图层：只保留 window / zoom，静态特效与 tilt 忽略并 warn
-        if (entry !== null && typeof entry === 'object') {
-          entry.effects = readBackgroundEffects(entry.effects, `assets["${assetId}"]`)
-        }
-      } else if (entry !== null && typeof entry === 'object') {
+        resolved.effects = readBackgroundEffects(entry.effects, `assets["${assetId}"]`)
+      } else {
         // 图标类（icon.*）：静态 effects + tilt；其它图片槽位允许静态 effects，tilt 报 badConfig
-        entry.effects = readEffects(
+        resolved.effects = readEffects(
           entry.effects,
           `assets["${assetId}"]`,
           assetId.startsWith(`${STYLE_PREFIX}.icon.`)
@@ -814,7 +1047,7 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
       if (assetId.startsWith(`${STYLE_PREFIX}.icon.`)) {
         // 图标是定尺寸 <img>：fit / align / position 没有意义，只应用 render
         stripOptions(
-          entry,
+          resolved,
           assetId,
           ['fit', 'align', 'position'],
           '图标只应用 render（image-rendering）'
@@ -822,8 +1055,13 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
       }
     } else if (FONT_EXT.has(ext)) {
       assets[assetId] = { blob: blobOf(path, MIME[ext]), alpha: 1, exposure: 0, kind: 'font' }
-      stripOptions(entry, assetId, ['fit', 'align', 'position', 'render'], '字体资源不应用图片选项')
-      stripEffects(entry, assetId, '字体资源不支持视觉特效')
+      stripOptions(
+        resolved,
+        assetId,
+        ['fit', 'align', 'position', 'render'],
+        '字体资源不应用图片选项'
+      )
+      stripEffects(resolved, assetId, '字体资源不支持视觉特效')
     } else if (TEXT_EXT.has(ext)) {
       assets[assetId] = {
         blob: blobOf(path, 'text/plain; charset=utf-8'),
@@ -831,32 +1069,47 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
         exposure: 0,
         kind: 'font',
       }
-      stripOptions(entry, assetId, ['fit', 'align', 'position', 'render'], '文本资源不应用图片选项')
-      stripEffects(entry, assetId, '文本资源不支持视觉特效')
+      stripOptions(
+        resolved,
+        assetId,
+        ['fit', 'align', 'position', 'render'],
+        '文本资源不应用图片选项'
+      )
+      stripEffects(resolved, assetId, '文本资源不支持视觉特效')
     } else {
       ignored.push(assetId)
     }
+    resolvedAssets[assetId] = resolved
   }
 
-  const icon = resolveManifestImages(manifest.icon, 'icon')
-  const cover = resolveManifestImages(manifest.cover, 'cover')
-
+  // 包级 license：显式 file 严格；没写则按默认位置（LICENSE / LICENSE.txt / LICENSE.md ...）查找
+  const licensePath =
+    input.license?.file !== undefined
+      ? requireEntry(input.license.file)
+      : findEntry(LICENSE_DEFAULT_CANDIDATES)
   let license: string | undefined
-  if (manifest.license) {
-    const path = normalizeEntryPath(manifest.license.file)
-    if (!path || !paths.has(path)) {
-      throw new StylePackError('missingFile', manifest.license.file)
-    }
-    const bytes = paths.get(path) as Uint8Array
+  if (licensePath) {
+    const bytes = paths.get(licensePath) as Uint8Array
     if (bytes.length <= MAX_LICENSE_BYTES) {
       const text = new TextDecoder().decode(bytes)
       if (isUnsafeText(text, true)) {
-        warn(`[style-pack] ${manifest.license.file} 含控制字符或 <、>，不展示许可证全文`)
+        warn(`[style-pack] ${licensePath} 含控制字符或 <、>，不展示许可证全文`)
       } else {
         license = text
       }
     }
   }
+
+  // 解析结果里的 file 已补齐（显式值或默认位置），下游 / IndexedDB 不需要再做默认路径查找
+  const manifest: StyleManifest = {
+    ...input,
+    icon: resolveManifestRef(input.icon, 'icon'),
+    cover: resolveManifestRef(input.cover, 'cover'),
+    license: licensePath ? { file: licensePath } : undefined,
+    assets: resolvedAssets,
+  }
+  const icon = readManifestBlobs(manifest.icon, 'icon')
+  const cover = readManifestBlobs(manifest.cover, 'cover')
 
   return { manifest, assets, icon, cover, license, ignored }
 }
