@@ -11,23 +11,23 @@ export const zh = {
   sessionSaveFailed: '对话或附件尚未保存到本机，关闭页面可能丢失，请重试',
   sessionDeleteFailed: '删除对话失败，请重试',
   settings: '设置',
-  appName: 'DSLike Chat',
+  appName: 'Aurora Chat',
   aboutTitle: '关于',
   aboutBadge: '社区客户端',
   aboutDisclaimerTitle: '非官方声明',
   aboutDisclaimer:
-    'DSLike Chat 是社区维护的客户端：界面与部分代码基于开源项目 chat-demo，并在此基础上做了大量修改与扩展（样式包、API 预设、用量统计、记忆等）。它不是 DeepSeek 官方产品，也未获得 DeepSeek 的授权或背书。名称、界面与商标归各自权利人所有。',
+    'Aurora Chat 是社区维护的客户端：界面与部分代码基于开源项目 chat-demo，并在此基础上做了大量修改与扩展（样式包、API 预设、用量统计、记忆等）。它不是 DeepSeek 官方产品，也未获得 DeepSeek 的授权或背书。名称、界面与商标归各自权利人所有。',
   aboutUpstreamLabel: '上游项目',
   aboutLicenseLabel: '开源许可（MIT）',
   aboutIconsLabel: '图标',
   aboutIconsText:
-    '应用图标是本项目自绘的 DS 标记与聊天气泡组合，不是 DeepSeek 官方图形，仅用于界面识别。',
+    '应用图标与启动屏为本项目自绘的抽象极光标记：深蓝底上青蓝到紫的极光弧带，不含任何字母或官方元素。',
   aboutThirdPartyLabel: '第三方组件',
   aboutThirdPartyText:
     'Electron、Chromium、Capacitor 与各前端依赖遵循其自身许可；桌面分发包内附 LICENSE.electron.txt、LICENSES.chromium.html 与 NOTICE.md。',
   aboutVersionLabel: '版本',
   disclaimerGateTitle: '使用前请确认',
-  disclaimerGateLead: 'DSLike Chat 是由社区成员基于开源项目 chat-demo 修改并维护的客户端。',
+  disclaimerGateLead: 'Aurora Chat 是由社区成员基于开源项目 chat-demo 修改并维护的客户端。',
   disclaimerGatePointNotOfficial:
     '它不是 DeepSeek 官方产品，与深度求索及其关联公司没有隶属、合作或授权关系。',
   disclaimerGatePointCommunity:

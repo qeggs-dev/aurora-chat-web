@@ -99,13 +99,13 @@ export const formatIsoWithOffset = (date = new Date()): string => {
 
 /**
  * 稳定格式（单行，字段用中文分号分隔；version 缺失时整段省略）：
- * `运行环境：platform=web；app=DSLike Chat；version=0.2.1；locale=zh-CN；theme=light；time=2026-11-18T00:40:00+08:00`
+ * `运行环境：platform=web；app=Aurora Chat；version=0.2.1；locale=zh-CN；theme=light；time=2026-11-18T00:40:00+08:00`
  */
 export const runtimeMeta = (): string => {
   const version = readAppVersion()
   const fields = [
     `platform=${detectPlatform()}`,
-    'app=DSLike Chat',
+    'app=Aurora Chat',
     ...(version ? [`version=${version}`] : []),
     `locale=${readLocale()}`,
     `theme=${readTheme()}`,

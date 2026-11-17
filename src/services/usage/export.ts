@@ -61,11 +61,11 @@ export const usageExportStamp = (timestamp: number): string => {
   )
 }
 
-/** dslike-usage-YYYYMMDD-HHmm.json / .csv */
+/** aurora-usage-YYYYMMDD-HHmm.json / .csv */
 export const usageExportFilename = (
   format: UsageExportFormat,
   timestamp = Date.now()
-): string => `dslike-usage-${usageExportStamp(timestamp)}.${format}`
+): string => `aurora-usage-${usageExportStamp(timestamp)}.${format}`
 
 /** 按 createdAt 升序；时间相同的保持读取顺序（IndexedDB 索引顺序） */
 const sortByCreatedAt = (events: UsageRecord[]): UsageRecord[] =>

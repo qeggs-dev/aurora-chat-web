@@ -14,24 +14,24 @@ export const en = {
     'Chats or attachments have not been saved locally. Retry before closing this page.',
   sessionDeleteFailed: 'Unable to delete this chat. Please try again.',
   settings: 'Settings',
-  appName: 'DSLike Chat',
+  appName: 'Aurora Chat',
   aboutTitle: 'About',
   aboutBadge: 'Community client',
   aboutDisclaimerTitle: 'Community client',
   aboutDisclaimer:
-    'DSLike Chat is a community-maintained client: its interface and parts of the code come from the open-source chat-demo project, with substantial modifications and additions (style packs, API presets, usage stats, memory). It is not a DeepSeek product and is not affiliated with or endorsed by DeepSeek. Names, interface and trademarks belong to their respective owners.',
+    'Aurora Chat is a community-maintained client: its interface and parts of the code come from the open-source chat-demo project, with substantial modifications and additions (style packs, API presets, usage stats, memory). It is not a DeepSeek product and is not affiliated with or endorsed by DeepSeek. Names, interface and trademarks belong to their respective owners.',
   aboutUpstreamLabel: 'Upstream project',
   aboutLicenseLabel: 'Open-source license (MIT)',
   aboutIconsLabel: 'Icon',
   aboutIconsText:
-    'The app icon is our own DS-and-chat-bubble mark, not an official DeepSeek graphic; it is used for identification only.',
+    'The app icon and splash use an original abstract aurora mark: cyan-to-violet aurora ribbons on a deep blue field, with no lettering or official elements.',
   aboutThirdPartyLabel: 'Third-party components',
   aboutThirdPartyText:
     'Electron, Chromium, Capacitor and the front-end dependencies keep their own licenses. The desktop package ships LICENSE.electron.txt, LICENSES.chromium.html and NOTICE.md.',
   aboutVersionLabel: 'Version',
   disclaimerGateTitle: 'Before you start',
   disclaimerGateLead:
-    'DSLike Chat is a client built and maintained by community members on top of the open-source chat-demo project.',
+    'Aurora Chat is a client built and maintained by community members on top of the open-source chat-demo project.',
   disclaimerGatePointNotOfficial:
     'It is not a DeepSeek product and has no affiliation, partnership or authorization from DeepSeek.',
   disclaimerGatePointCommunity:
