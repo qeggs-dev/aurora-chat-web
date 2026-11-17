@@ -87,6 +87,31 @@ export const slotId = (slot: string, theme: Theme) => `${slot}.${theme}`
 
 export type StyleAssetEntry = { file: string; alpha?: number; exposure?: number }
 
+/** 配色令牌键：color_palette 里每个主题可选的 13 个语义色 */
+export const PALETTE_KEYS = [
+  'background',
+  'surface',
+  'surface_alt',
+  'text',
+  'text_secondary',
+  'text_tertiary',
+  'border',
+  'accent',
+  'accent_text',
+  'bubble',
+  'code',
+  'danger',
+  'mask',
+] as const
+
+export type PaletteColorKey = (typeof PALETTE_KEYS)[number]
+
+/** 单个主题的配色覆盖；键全部可选，缺失的令牌沿用应用默认色 */
+export type PaletteColors = Partial<Record<PaletteColorKey, string>>
+
+/** color_palette：浅色与深色主题各自一套语义色 */
+export type StylePalette = { light?: PaletteColors; dark?: PaletteColors }
+
 /** index.json 的结构；schema 恒为 1 */
 export type StyleManifest = {
   schema: 1
@@ -98,6 +123,7 @@ export type StyleManifest = {
   sidebarTitle?: string
   icon?: { file: string }
   license?: { file: string }
+  color_palette?: StylePalette
   assets: Record<string, StyleAssetEntry>
 }
 

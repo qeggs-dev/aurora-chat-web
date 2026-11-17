@@ -1,6 +1,7 @@
 /** 样式包 zip 的解析与校验：路径、大小、扩展名与清单字段都在这里把关。 */
 import { unzipSync } from 'fflate'
-import type { StyleAssetEntry, StyleManifest } from './types.js'
+import { PALETTE_KEYS } from './types.js'
+import type { PaletteColors, StyleAssetEntry, StyleManifest, StylePalette } from './types.js'
 
 export type StylePackErrorCode =
   | 'tooLarge'
@@ -48,6 +49,56 @@ const MIME: Record<string, string> = {
   otf: 'font/otf',
   woff: 'font/woff',
   woff2: 'font/woff2',
+}
+
+/** color_palette 只放纯 CSS 颜色：hex、rgb()/rgba()、hsl()/hsla()、transparent，拒绝 url(/; /} 等注入 */
+const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
+const RGB_COLOR =
+  /^rgba?\(\s*(?:25[0-5]|2[0-4]\d|1?\d?\d)%?\s*,\s*(?:25[0-5]|2[0-4]\d|1?\d?\d)%?\s*,\s*(?:25[0-5]|2[0-4]\d|1?\d?\d)%?\s*(?:,\s*(?:0|1|0?\.\d+|100(?:\.0+)?%|\d{1,2}(?:\.\d+)?%)\s*)?\)$/i
+const HSL_COLOR =
+  /^hsla?\(\s*-?\d{1,3}(?:\.\d+)?(?:deg)?\s*,\s*(?:100(?:\.0+)?|\d{1,2}(?:\.\d+)?)%\s*,\s*(?:100(?:\.0+)?|\d{1,2}(?:\.\d+)?)%\s*(?:,\s*(?:0|1|0?\.\d+|100(?:\.0+)?%|\d{1,2}(?:\.\d+)?%)\s*)?\)$/i
+
+const isCssColor = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  (HEX_COLOR.test(value) || RGB_COLOR.test(value) || HSL_COLOR.test(value) || value.toLowerCase() === 'transparent')
+
+/** 单个主题的配色：只认 13 个已知令牌，未知键忽略，值必须是合法 CSS 颜色 */
+const readPaletteColors = (raw: unknown, field: string): PaletteColors => {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new StylePackError('badIndex', `${field} must be an object`)
+  }
+  const record = raw as Record<string, unknown>
+  const colors: PaletteColors = {}
+  for (const key of PALETTE_KEYS) {
+    const value = record[key]
+    if (value === undefined) {
+      continue
+    }
+    if (!isCssColor(value)) {
+      throw new StylePackError('badIndex', `${field}.${key} must be a CSS color`)
+    }
+    colors[key] = value
+  }
+  return colors
+}
+
+/** 顶层 color_palette：只能是对象，light/dark 可单独缺省，出现时必须是配色对象 */
+const readColorPalette = (raw: unknown): StylePalette | undefined => {
+  if (raw === undefined) {
+    return undefined
+  }
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new StylePackError('badIndex', 'color_palette must be an object')
+  }
+  const record = raw as Record<string, unknown>
+  const palette: StylePalette = {}
+  if (record.light !== undefined) {
+    palette.light = readPaletteColors(record.light, 'color_palette.light')
+  }
+  if (record.dark !== undefined) {
+    palette.dark = readPaletteColors(record.dark, 'color_palette.dark')
+  }
+  return palette
 }
 
 /** 只接受包内相对路径：不允许绝对路径、`.`/`..` 与空段。 */
@@ -112,6 +163,7 @@ const readManifest = (text: string): StyleManifest => {
     }
     return file
   }
+  const colorPalette = readColorPalette(record.color_palette)
   return {
     schema: 1,
     id: record.id,
@@ -122,6 +174,7 @@ const readManifest = (text: string): StyleManifest => {
     sidebarTitle: typeof record.sidebarTitle === 'string' && record.sidebarTitle.trim() ? record.sidebarTitle.trim() : undefined,
     icon: ref(record.icon, 'icon') ? { file: ref(record.icon, 'icon') as string } : undefined,
     license: ref(record.license, 'license') ? { file: ref(record.license, 'license') as string } : undefined,
+    color_palette: colorPalette,
     assets: record.assets as Record<string, StyleAssetEntry>,
   }
 }
