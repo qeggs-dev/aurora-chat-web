@@ -6,6 +6,7 @@ import { ensureApiKey } from './settingsDialogState.js'
 import styles from './DisclaimerGate.module.css'
 
 const UPSTREAM_URL = 'https://github.com/deepseek-ai/chat-demo'
+const OFFICIAL_DEMO_URL = 'https://cdn.deepseek.com/chat-demo'
 
 /**
  * 首次使用必须先确认的声明：本应用与官方无关，是社区基于 chat-demo 修改而成。
@@ -43,6 +44,17 @@ export const DisclaimerGate = () => {
         {t('disclaimerGateUpstreamLabel')}
         <a className={styles.link} href={UPSTREAM_URL} target="_blank" rel="noreferrer noopener">
           github.com/deepseek-ai/chat-demo
+        </a>
+      </p>
+      <p className={styles.note}>
+        {t('disclaimerGateOfficialDemoLabel')}
+        <a
+          className={styles.link}
+          href={OFFICIAL_DEMO_URL}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          cdn.deepseek.com/chat-demo
         </a>
       </p>
       <p className={styles.note}>{t('disclaimerGateAfter')}</p>

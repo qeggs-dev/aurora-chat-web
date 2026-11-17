@@ -464,6 +464,8 @@ export type StylePackSummary = {
   /** 封面 objectURL，按主题分开；列表刷新时与 iconUrls 的每个主题 URL 一起 revoke */
   coverUrls?: ThemedUrls
   importedAt: number
+  /** 随安装包分发的内置样式包：首次启动自动安装、不可删除、「恢复默认」回到它 */
+  builtin?: boolean
   /** 详情页的完整清单（资源槽位 / 参数 / 调色板 / sidebarTitle） */
   manifest: StyleManifest
   /** 许可证全文；文件缺失或不安全时为 undefined */

@@ -11,6 +11,7 @@ import {
   activateStylePack,
   importStylePack,
   initStylePacks,
+  restoreDefaultStylePack,
   removeStylePack,
   useStylePackStore,
 } from '../style/store.js'
@@ -22,6 +23,8 @@ export interface StyleService {
   subscribe: typeof useStylePackStore.subscribe
   activate: typeof activateStylePack
   importZip: typeof importStylePack
+  /** 恢复内置极光默认样式（内置包不可用时才退化为上游外观） */
+  restoreDefault: typeof restoreDefaultStylePack
   remove: typeof removeStylePack
   /** 把启用包的资源写进 CSS 变量（phase 2 的主题重应用也走它） */
   applyVars: typeof applyStyleVars
@@ -39,6 +42,7 @@ export const stylePlugin: AppServicePlugin<'style'> = {
       subscribe: (listener) => useStylePackStore.subscribe(listener),
       activate: activateStylePack,
       importZip: importStylePack,
+      restoreDefault: restoreDefaultStylePack,
       remove: removeStylePack,
       applyVars: applyStyleVars,
       async dispose() {

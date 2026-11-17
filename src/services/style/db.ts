@@ -12,6 +12,10 @@ export type StoredStylePack = {
   cover?: ThemedBlobs
   license?: string
   importedAt: number
+  /** 随安装包分发的内置样式包：不可删除；用户同 id 导入不覆盖它 */
+  builtin?: boolean
+  /** 内置包版本（安装包内 index.json 的 version），启动时据此判断是否需要升级记录 */
+  builtinVersion?: string
 }
 
 interface StyleDB extends DBSchema {
@@ -80,6 +84,7 @@ export const summarize = (
   iconUrls: urls.iconUrls,
   coverUrls: urls.coverUrls,
   importedAt: pack.importedAt,
+  builtin: pack.builtin,
   manifest: pack.manifest,
   license: pack.license,
 })

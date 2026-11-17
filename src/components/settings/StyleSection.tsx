@@ -7,6 +7,7 @@ import {
   activateStylePack,
   importStylePack,
   removeStylePack,
+  restoreDefaultStylePack,
   useStylePackState,
 } from '../../services/style/store.js'
 import { effectCss, useEffectsImage } from '../../services/style/effects.js'
@@ -294,11 +295,14 @@ const StylePackDetailContent = ({
           <div className={styles.detailHeroName}>{pack.name}</div>
           {heroMeta ? <div className={styles.detailHeroMeta}>{heroMeta}</div> : null}
         </div>
-        {isActive ? (
-          <span className={clsx(settingsStyles.stylePackBadge, styles.detailHeroBadge)}>
-            {t('stylePackInUse')}
-          </span>
-        ) : null}
+        <span className={styles.detailHeroBadge}>
+          {pack.builtin ? (
+            <span className={settingsStyles.stylePackBadge}>{t('stylePackBuiltinBadge')}</span>
+          ) : null}
+          {isActive ? (
+            <span className={settingsStyles.stylePackBadge}>{t('stylePackInUse')}</span>
+          ) : null}
+        </span>
       </div>
 
       <DetailSection title={t('stylePackDetailInfoSection')}>
@@ -528,7 +532,13 @@ const StylePackDetailContent = ({
             {t(pending ? 'stylePackLoadingPack' : 'stylePackLoad')}
           </Button>
         )}
-        <Button variant="dangerOutlined" size="m" disabled={busy} onClick={onDelete}>
+        <Button
+          variant="dangerOutlined"
+          size="m"
+          disabled={busy || pack.builtin}
+          title={pack.builtin ? t('stylePackBuiltinUndeletable') : undefined}
+          onClick={onDelete}
+        >
           {t('stylePackDelete')}
         </Button>
       </div>
@@ -557,6 +567,10 @@ export const StyleSection = () => {
 
   const busy = pendingId !== null || restoring || importing
   const detailPack = detailId === null ? undefined : packs.find((pack) => pack.id === detailId)
+  /** 本机内置样式包 id（内置资产缺失 / 被用户同 id 包覆盖时为 null） */
+  const builtinId = packs.find((pack) => pack.builtin === true)?.id ?? null
+  /** 当前生效的是「默认样式」：内置包启用中，或没有任何包（应用默认外观） */
+  const defaultActive = activeId === null || builtinId === activeId
 
   const onPick = async (file: File) => {
     setImportStatus(null)
@@ -583,12 +597,12 @@ export const StyleSection = () => {
   }
 
   const restoreDefault = async () => {
-    if (busy || activeId === null) {
+    if (busy || defaultActive) {
       return
     }
     setRestoring(true)
     try {
-      await activateStylePack(null)
+      await restoreDefaultStylePack()
     } catch {
       showToast({ key: 'stylePackRestoreFailed', type: 'error' })
     } finally {
@@ -697,7 +711,7 @@ export const StyleSection = () => {
                 className={clsx(
                   settingsStyles.stylePackCard,
                   settingsStyles.stylePackRestoreCard,
-                  activeId === null && settingsStyles.stylePackCardActive
+                  defaultActive && settingsStyles.stylePackCardActive
                 )}
               >
                 <div className={settingsStyles.stylePackRestoreMain}>
@@ -706,28 +720,37 @@ export const StyleSection = () => {
                   </span>
                   <div className={settingsStyles.stylePackInfo}>
                     <div className={settingsStyles.stylePackName}>
-                      {t('stylePackRestoreDefault')}
+                      {t(builtinId ? 'stylePackRestoreBuiltin' : 'stylePackRestoreDefault')}
                     </div>
                     <div className={settingsStyles.stylePackDescription}>
-                      {activeId === null ? t('stylePackDefaultInUse') : t('stylePackDefaultHint')}
+                      {builtinId === activeId
+                        ? t('stylePackBuiltinHint')
+                        : activeId === null
+                          ? t('stylePackDefaultInUse')
+                          : builtinId
+                            ? t('stylePackDefaultHint')
+                            : t('stylePackBuiltinMissing')}
                     </div>
                   </div>
                 </div>
                 <div className={settingsStyles.stylePackActions}>
-                  {activeId === null ? (
+                  {defaultActive ? (
                     <span className={settingsStyles.stylePackBadge}>
-                      {t('stylePackDefaultInUse')}
+                      {builtinId === activeId
+                        ? t('stylePackBuiltinActive')
+                        : t('stylePackDefaultInUse')}
                     </span>
-                  ) : (
+                  ) : builtinId ? (
+                    // 正常安装下始终可用：恢复默认 = 启用内置极光包（不提供回到上游外观的入口）
                     <Button
                       variant="outlined"
                       size="m"
                       disabled={busy}
                       onClick={() => void restoreDefault()}
                     >
-                      {t('stylePackRestoreDefault')}
+                      {t('stylePackRestoreBuiltin')}
                     </Button>
-                  )}
+                  ) : null}
                 </div>
               </li>
               {packs.map((pack) => {
@@ -766,7 +789,19 @@ export const StyleSection = () => {
                         />
                       </span>
                       <span className={settingsStyles.stylePackInfo}>
-                        <span className={settingsStyles.stylePackName}>{pack.name}</span>
+                        <span className={styles.stylePackNameRow}>
+                          <span className={settingsStyles.stylePackName}>{pack.name}</span>
+                          {pack.builtin ? (
+                            <span
+                              className={clsx(
+                                settingsStyles.stylePackBadge,
+                                styles.builtinBadge
+                              )}
+                            >
+                              {t('stylePackBuiltinBadge')}
+                            </span>
+                          ) : null}
+                        </span>
                         {meta ? <span className={settingsStyles.stylePackMeta}>{meta}</span> : null}
                         {pack.description ? (
                           <span className={settingsStyles.stylePackDescription}>
@@ -794,7 +829,8 @@ export const StyleSection = () => {
                       <Button
                         variant="dangerOutlined"
                         size="m"
-                        disabled={busy}
+                        disabled={busy || pack.builtin}
+                        title={pack.builtin ? t('stylePackBuiltinUndeletable') : undefined}
                         onClick={() => setDeleteTarget(pack)}
                       >
                         {t('stylePackDelete')}

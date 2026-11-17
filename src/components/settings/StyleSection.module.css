@@ -1,3 +1,26 @@
+.detailHeroBadge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* 内置包名称行：名称 + 「内置」徽标 */
+.stylePackNameRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 「内置」徽标：比「使用中」徽标更小，紧贴包名 */
+.builtinBadge {
+  height: 18px;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 18px;
+}
 .section {
   display: flex;
   flex-direction: column;
@@ -281,10 +304,6 @@
   text-shadow:
     0 1px 2px color-mix(in srgb, var(--dsw-alias-bg-base) 88%, transparent),
     0 0 6px color-mix(in srgb, var(--dsw-alias-bg-base) 65%, transparent);
-}
-
-.detailHeroBadge {
-  margin-left: auto;
 }
 
 /* 内容分块：半透明主题面板（基础信息 / 资源清单 / 参数 / 调色板 / 许可）。

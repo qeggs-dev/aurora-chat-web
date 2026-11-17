@@ -19,3 +19,9 @@ declare module '*.wasm' {
   const url: string
   export default url
 }
+
+/** 经 rspack `asset/resource` 输出的内置样式包 zip，import 得到的是可 fetch 的 URL */
+declare module '*.zip' {
+  const url: string
+  export default url
+}

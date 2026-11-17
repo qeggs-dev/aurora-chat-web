@@ -1,4 +1,6 @@
 /** 样式包状态：IndexedDB 存资源，objectURL 只在启用期间存活，localStorage 记启用项。 */
+/** 内置极光样式包资产：由 scripts/build-web.ps1 复制到 src/assets/builtin/，rspack 打包成可 fetch 的 URL */
+import builtinPackUrl from '../../assets/builtin/aurora.zip'
 import { useSyncExternalStore } from 'react'
 import { create } from 'zustand'
 import { useSettings, type ThemePreference } from '../settings.js'
@@ -11,7 +13,7 @@ import {
   putStoredStylePack,
   summarize,
 } from './db.js'
-import { parseStylePackZip, StylePackError } from './zip.js'
+import { parseStylePackZip, StylePackError, type ParsedStylePack } from './zip.js'
 import {
   slotId,
   STYLE_PREFIX,
@@ -186,9 +188,116 @@ const refreshPacks = async (): Promise<void> => {
   }
 }
 
+/** 安装包内置的极光示例包文件名（只影响 File 名字，解析只认 zip 里的 index.json） */
+const BUILTIN_PACK_FILE = 'aurora.zip'
+
+/** 内置包资产缺失 / 解析失败只 warn 一次：不能让资源问题在每次启动重复刷屏 */
+let builtinWarningShown = false
+const warnBuiltinOnce = (message: string): void => {
+  if (builtinWarningShown) {
+    return
+  }
+  builtinWarningShown = true
+  // oxlint-disable-next-line no-console
+  console.warn(`[style-pack] ${message}`)
+}
+
+/** 版本号拆段：纯数字段转 number，其余保持字符串；用于内置包「版本较旧」判断 */
+const versionParts = (value: string | undefined): Array<number | string> =>
+  (value ?? '')
+    .split('.')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => (/^\d+$/.test(part) ? Number(part) : part))
+
+/**
+ * 比较两个版本号：left > right 返回正数、相等 0、更小为负数。
+ * 数字段按数值比较（1.10.0 > 1.9.0），非数字段按字符串比较，缺失段视为 0。
+ */
+const compareVersions = (left: string | undefined, right: string | undefined): number => {
+  const a = versionParts(left)
+  const b = versionParts(right)
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    const leftPart = a[index] ?? 0
+    const rightPart = b[index] ?? 0
+    if (leftPart === rightPart) {
+      continue
+    }
+    if (typeof leftPart === 'number' && typeof rightPart === 'number') {
+      return leftPart - rightPart
+    }
+    return String(leftPart).localeCompare(String(rightPart))
+  }
+  return 0
+}
+
+/**
+ * 确保内置极光样式包已安装（幂等，启动时先于恢复 active 执行）：
+ * - 本机没有该 id（aurora）→ 写入并标记 `builtin: true` + `builtinVersion`；
+ * - 已有 builtin 记录且安装包内资产版本更新 → 覆盖内容并刷新 `builtinVersion`；
+ * - 已有用户自己导入的同 id 包（builtin=false）→ 保留用户包，不覆盖；
+ * - 内置资产 fetch / 解析失败 → 只 warn 一次并返回 null，不阻塞启动。
+ *
+ * 返回本机内置包的 id（没有可用内置包时为 null）。
+ */
+const ensureBuiltinPack = async (): Promise<string | null> => {
+  let parsed: ParsedStylePack
+  try {
+    const response = await fetch(builtinPackUrl)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const blob = await response.blob()
+    parsed = await parseStylePackZip(
+      new File([blob], BUILTIN_PACK_FILE, { type: 'application/zip' })
+    )
+  } catch (error) {
+    warnBuiltinOnce(
+      `内置样式包不可用（${error instanceof Error ? error.message : String(error)}），已回退应用默认外观`
+    )
+    return null
+  }
+
+  const { manifest } = parsed
+  const existing = await getStoredStylePack(manifest.id)
+  // 用户自己导入的同 id 包优先：不把内置内容盖到用户包上
+  if (existing && existing.builtin !== true) {
+    return null
+  }
+  // 已安装更高或同版本的内置记录时不重复写库（避免每次启动都刷新 IndexedDB）
+  if (existing && compareVersions(manifest.version, existing.builtinVersion) <= 0) {
+    return manifest.id
+  }
+
+  const assets: Record<string, Blob> = {}
+  for (const [assetId, asset] of Object.entries(parsed.assets)) {
+    assets[assetId] = asset.blob
+  }
+  await putStoredStylePack({
+    id: manifest.id,
+    manifest,
+    assets,
+    icon: parsed.icon.light || parsed.icon.dark ? parsed.icon : undefined,
+    cover: parsed.cover.light || parsed.cover.dark ? parsed.cover : undefined,
+    license: parsed.license,
+    // 升级时保留首次安装时间，列表排序不因升级跳动
+    importedAt: existing?.importedAt ?? Date.now(),
+    builtin: true,
+    builtinVersion: manifest.version,
+  })
+  return manifest.id
+}
+
 /** 递增序号：并发的启用请求只有最后一次生效 */
 let activationSequence = 0
 
+/**
+ * 启用指定样式包；传入的 id 取不到记录时清除全部样式变量、回到上游默认外观。
+ *
+ * `activateStylePack(null)` 是**内部兜底**：只在内置包不可用（资产缺失 / 解析失败 /
+ * 被用户同 id 包覆盖）或初始化异常时走到。正常构建与安装下，启动、删除非内置包、
+ * 「恢复默认」都指向内置极光包，UI 不提供「停用样式包 / 回到上游外观」的入口。
+ */
 export const activateStylePack = async (id: string | null): Promise<void> => {
   const sequence = ++activationSequence
   const pack = id ? await getStoredStylePack(id) : undefined
@@ -297,11 +406,31 @@ export const importStylePack = async (file: File): Promise<void> => {
   }
 }
 
+/** 当前列表里的内置样式包 id（没有内置包、只剩应用默认外观时为 null） */
+export const getBuiltinStylePackId = (): string | null =>
+  get().packs.find((pack) => pack.builtin === true)?.id ?? null
+
+/**
+ * 「恢复默认（极光）」：启用随安装包分发的内置包。
+ * 只有内置包不可用（资产缺失 / 解析失败 / 被用户同 id 包覆盖）时才返回 null，
+ * 此时 `activateStylePack(null)` 会回到上游默认外观——这是唯一合法的降级路径。
+ * 正常构建 / 安装下内置包总是可用，UI 不会提供回到上游外观的入口。
+ */
+export const restoreDefaultStylePack = async (): Promise<void> => {
+  await activateStylePack(getBuiltinStylePackId())
+}
+
 export const removeStylePack = async (id: string): Promise<void> => {
+  const stored = await getStoredStylePack(id)
+  // 内置样式包与内置默认预设一样不可删除：拒绝并静默返回
+  if (stored?.builtin) {
+    return
+  }
   const wasActive = get().activeId === id
   await deleteStoredStylePack(id)
   if (wasActive) {
-    await activateStylePack(null)
+    // 删掉当前启用的非内置包后自动回到内置默认样式；内置包不可用时才退化为上游外观
+    await activateStylePack(getBuiltinStylePackId())
   }
   await refreshPacks()
 }
@@ -333,11 +462,17 @@ export const initStylePacks = (): Promise<void> =>
   (initTask ??= (async () => {
     bindTheme()
     try {
+      // 先确保随安装包分发的内置极光包就位（全新安装写入 / 版本升级更新 / 用户同 id 包保留）
+      const builtinId = await ensureBuiltinPack()
       await refreshPacks()
       const saved = readActiveId()
       if (saved && get().packs.some((pack) => pack.id === saved)) {
         await activateStylePack(saved)
+      } else if (builtinId) {
+        // 没有启用记录（首次安装 / 记录已失效）时启用内置包
+        await activateStylePack(builtinId)
       } else {
+        // 内置包也不可用时回退原有行为：应用默认外观
         await activateStylePack(null)
       }
     } catch {

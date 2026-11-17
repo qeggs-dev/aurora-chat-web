@@ -614,6 +614,8 @@ function InfoIcon() {
 }
 
 const UPSTREAM_URL = 'https://github.com/deepseek-ai/chat-demo'
+const OFFICIAL_DEMO_URL = 'https://cdn.deepseek.com/chat-demo'
+const OFFICIAL_DEMO_LABEL = 'cdn.deepseek.com/chat-demo'
 
 const UPSTREAM_REPO_LABEL = 'github.com/deepseek-ai/chat-demo'
 
@@ -665,6 +667,18 @@ const AboutSection = () => {
         <a className={styles.aboutLink} href={UPSTREAM_URL} target="_blank" rel="noreferrer noopener">
           {UPSTREAM_REPO_LABEL}
         </a>
+      </div>
+      <div className={styles.aboutBlock}>
+        <div className={styles.aboutLabel}>{t('aboutOfficialDemoLabel')}</div>
+        <a
+          className={styles.aboutLink}
+          href={OFFICIAL_DEMO_URL}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          {OFFICIAL_DEMO_LABEL}
+        </a>
+        <p className={styles.aboutText}>{t('aboutOfficialDemoNote')}</p>
       </div>
       <div className={styles.aboutBlock}>
         <div className={styles.aboutLabel}>{t('aboutLicenseLabel')}</div>

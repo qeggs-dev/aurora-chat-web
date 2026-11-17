@@ -21,6 +21,9 @@ export const en = {
   aboutDisclaimer:
     'Aurora Chat is a community-maintained client: its interface and parts of the code come from the open-source chat-demo project, with substantial modifications and additions (style packs, API presets, usage stats, memory). It is not a DeepSeek product and is not affiliated with or endorsed by DeepSeek. Names, interface and trademarks belong to their respective owners.',
   aboutUpstreamLabel: 'Upstream project',
+  aboutOfficialDemoLabel: 'Official live demo',
+  aboutOfficialDemoNote:
+    'The official online build of chat-demo, for comparison only. This project is a community client and is unrelated to it.',
   aboutLicenseLabel: 'Open-source license (MIT)',
   aboutIconsLabel: 'Icon',
   aboutIconsText:
@@ -39,6 +42,7 @@ export const en = {
   disclaimerGatePointLicense:
     'Upstream code is released under the MIT license; names, marks and trademarks belong to their respective owners.',
   disclaimerGateUpstreamLabel: 'Upstream project: ',
+  disclaimerGateOfficialDemoLabel: 'Official live demo: ',
   disclaimerGateAfter:
     'By continuing you confirm that you have read and understood the notice above. You can revisit it any time under Settings -> About.',
   disclaimerGateAccept: 'I understand, continue',
@@ -220,7 +224,15 @@ export const en = {
   stylePackLoadFailed: 'Unable to load the style pack. Please try again.',
   stylePackRestoreDefault: 'Restore default style',
   stylePackDefaultInUse: 'Currently using the default style',
-  stylePackDefaultHint: 'Unload the current style pack and restore the default appearance.',
+  stylePackDefaultHint: 'Return to the built-in Aurora default style shipped with the app.',
+  stylePackRestoreBuiltin: 'Restore default (Aurora)',
+  stylePackBuiltinBadge: 'Built-in',
+  stylePackBuiltinUndeletable: 'Built-in style packs cannot be deleted',
+  stylePackBuiltinActive: 'Currently using the built-in default style',
+  stylePackBuiltinHint:
+    'The built-in Aurora style ships with the app and cannot be deleted; imported style packs can override it.',
+  stylePackBuiltinMissing:
+    'The built-in style pack is unavailable. Reinstall the app to restore the default appearance.',
   stylePackRestoreFailed: 'Unable to restore the default style. Please try again.',
   stylePackDetails: 'Details',
   stylePackBack: 'Back',
@@ -228,7 +240,7 @@ export const en = {
   stylePackDeleting: 'Deleting...',
   stylePackDeleteConfirmTitle: 'Delete style pack?',
   stylePackDeleteConfirm:
-    'This removes the pack from this device. The default style returns if it is currently active.',
+    'This removes the pack from this device. If it is currently in use, the built-in default style is restored automatically.',
   stylePackDeleted: 'Style pack deleted',
   stylePackDeleteFailed: 'Unable to delete the style pack. Please try again.',
   stylePackFailed: 'The style pack operation failed. Please try again.',
