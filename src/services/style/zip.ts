@@ -8,6 +8,7 @@ import {
   STYLE_PREFIX,
   STYLE_RENDERS,
   isSafePosition,
+  isThemedFileRef,
 } from './types.js'
 import type {
   PaletteColors,
@@ -15,6 +16,7 @@ import type {
   StyleAssetEntry,
   StyleEffects,
   StyleEmbossEffect,
+  StyleFileRef,
   StyleFit,
   StyleGlowEffect,
   StyleManifest,
@@ -22,8 +24,11 @@ import type {
   StyleRender,
   StyleShadowEffect,
   StyleStrokeEffect,
+  StyleThemeFileRef,
+  StyleThemedFileRef,
   StyleTiltEffect,
   StyleWindowEffect,
+  ThemedBlobs,
 } from './types.js'
 
 export type StylePackErrorCode =
@@ -329,20 +334,81 @@ const readBackgroundEffects = (raw: unknown, field: string): StyleEffects | unde
   return effects
 }
 
-/** 清单里的 icon / cover：`{ file, effects? }`；cover 允许 tilt，包图标不允许 */
+/** 顶层 icon / cover 允许出现的键（未知键忽略并 warn，帮助包作者发现拼写错误） */
+const MANIFEST_IMAGE_KEYS = ['file', 'light', 'dark', 'effects'] as const
+
+/** 单个主题的 icon / cover 项：必须有非空 file；effects 允许 tilt 时按封面规则校验 */
+const readThemeImage = (
+  raw: unknown,
+  field: string,
+  allowTilt: boolean
+): StyleThemeFileRef => {
+  if (!isPlainObject(raw)) {
+    throw new StylePackError('badIndex', `${field} must be an object with a file`)
+  }
+  const record = raw
+  for (const key of Object.keys(record)) {
+    if (key !== 'file' && key !== 'effects') {
+      warn(`[style-pack] ${field}.${key} 是未知字段，已忽略`)
+    }
+  }
+  if (typeof record.file !== 'string' || !record.file) {
+    throw new StylePackError('badIndex', `${field}.file must be a string`)
+  }
+  const effects = readEffects(record.effects, field, allowTilt)
+  return effects ? { file: record.file, effects } : { file: record.file }
+}
+
+/**
+ * 清单里的 icon / cover：兼容两种写法。
+ * - `{ file, effects? }`：主题无关，两个主题共用；
+ * - `{ light?, dark?, file?, effects? }`：按主题给文件，`file` 作为两主题兜底；
+ *   主题项内可各带 effects（覆盖包级值）。
+ * 结构错误统一报 badIndex（与旧行为一致），effects 非法仍报 badConfig 并带字段名。
+ */
 const readManifestImage = (
   value: unknown,
   field: 'icon' | 'cover'
-): { file: string; effects?: StyleEffects } | undefined => {
+): StyleFileRef | undefined => {
   if (value === undefined) {
     return undefined
   }
   const record = typeof value === 'string' ? { file: value } : value
-  if (!isPlainObject(record) || typeof record.file !== 'string' || !record.file) {
+  if (!isPlainObject(record)) {
+    throw new StylePackError('badIndex', `${field} must be an object with a file`)
+  }
+  for (const key of Object.keys(record)) {
+    if (!MANIFEST_IMAGE_KEYS.includes(key as (typeof MANIFEST_IMAGE_KEYS)[number])) {
+      warn(`[style-pack] ${field}.${key} 是未知字段，已忽略`)
+    }
+  }
+  if (record.file !== undefined && (typeof record.file !== 'string' || !record.file)) {
     throw new StylePackError('badIndex', `${field}.file must be a string`)
   }
-  const effects = readEffects(record.effects, field, field === 'cover')
-  return effects ? { file: record.file, effects } : { file: record.file }
+  const allowTilt = field === 'cover'
+  const sharedEffects = readEffects(record.effects, field, allowTilt)
+  // 只写 file（含旧版字符串写法）时两个主题共用；出现 light/dark 才按主题拆
+  if (record.light === undefined && record.dark === undefined) {
+    const file = record.file as string | undefined
+    if (!file) {
+      throw new StylePackError('badIndex', `${field}.file must be a string`)
+    }
+    return sharedEffects ? { file, effects: sharedEffects } : { file }
+  }
+  const ref: StyleThemedFileRef = {}
+  if (record.light !== undefined) {
+    ref.light = readThemeImage(record.light, `${field}.light`, allowTilt)
+  }
+  if (record.dark !== undefined) {
+    ref.dark = readThemeImage(record.dark, `${field}.dark`, allowTilt)
+  }
+  if (record.file !== undefined) {
+    ref.file = record.file as string
+  }
+  if (sharedEffects) {
+    ref.effects = sharedEffects
+  }
+  return ref
 }
 
 /**
@@ -529,9 +595,10 @@ export type ParsedStylePack = {
   manifest: StyleManifest
   /** assetId → 文件（已按主题后缀的完整 ID 建键） */
   assets: Record<string, { blob: Blob; alpha: number; exposure: number; kind: 'image' | 'font' }>
-  icon?: Blob
-  /** 详情页封面（可选，≤5 MB，png/jpg/jpeg/webp/svg） */
-  cover?: Blob
+  /** 包图标 blob，按主题分开；主题无关写法会让两个主题指向同一个 Blob */
+  icon: ThemedBlobs
+  /** 详情页封面 blob，按主题分开（每个文件 ≤5 MB，png/jpg/jpeg/webp/svg） */
+  cover: ThemedBlobs
   license?: string
   ignored: string[]
 }
@@ -652,6 +719,67 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
 
   const blobOf = (name: string, mime: string) => new Blob([bytesOf(name)], { type: mime })
 
+  /** 同一张图（同一路径）只建一个 Blob，让两个主题共用时不会重复占内存 */
+  const manifestBlobCache = new Map<string, Blob>()
+
+  /**
+   * 读取并校验 icon / cover 的单个文件：路径规则、图片扩展名、封面 5 MB 上限都不变；
+   * 返回的 Blob 按路径缓存，主题间同文件共享。
+   */
+  const readManifestBlob = (file: string, kind: 'icon' | 'cover'): Blob => {
+    const path = normalizeEntryPath(file)
+    if (!path || !paths.has(path)) {
+      throw new StylePackError('missingFile', file)
+    }
+    const ext = extensionOf(path)
+    if (kind === 'cover') {
+      if (!COVER_EXT.has(ext)) {
+        throw new StylePackError('badFileType', file)
+      }
+      const bytes = paths.get(path) as Uint8Array
+      if (bytes.length > MAX_COVER_BYTES) {
+        throw new StylePackError('badConfig', `cover file exceeds 5 MB: ${file}`)
+      }
+    } else if (!IMAGE_EXT.has(ext)) {
+      throw new StylePackError('badFileType', file)
+    }
+    const cached = manifestBlobCache.get(path)
+    if (cached) {
+      return cached
+    }
+    const blob = blobOf(path, MIME[ext])
+    manifestBlobCache.set(path, blob)
+    return blob
+  }
+
+  /**
+   * 按主题解析 icon / cover：
+   * - 主题无关写法 → 两个主题指向同一个 Blob；
+   * - 按主题写法 → 每个主题取自己的文件；该主题缺文件时用包级 `file` 兜底；
+   *   都没有则该主题没有图（不跨主题借用，UI 层展示时才允许回退另一主题）。
+   */
+  const resolveManifestImages = (
+    ref: StyleFileRef | undefined,
+    kind: 'icon' | 'cover'
+  ): ThemedBlobs => {
+    const blobs: ThemedBlobs = {}
+    if (!ref) {
+      return blobs
+    }
+    if (!isThemedFileRef(ref)) {
+      const blob = readManifestBlob(ref.file, kind)
+      return { light: blob, dark: blob }
+    }
+    for (const theme of ['light', 'dark'] as const) {
+      const file = ref[theme]?.file ?? ref.file
+      if (!file) {
+        continue
+      }
+      blobs[theme] = readManifestBlob(file, kind)
+    }
+    return blobs
+  }
+
   const assets: ParsedStylePack['assets'] = {}
   const ignored: string[] = []
   for (const [assetId, entry] of Object.entries(manifest.assets)) {
@@ -710,34 +838,8 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
     }
   }
 
-  let icon: Blob | undefined
-  if (manifest.icon) {
-    const path = normalizeEntryPath(manifest.icon.file)
-    if (!path || !paths.has(path)) {
-      throw new StylePackError('missingFile', manifest.icon.file)
-    }
-    if (!IMAGE_EXT.has(extensionOf(path))) {
-      throw new StylePackError('badFileType', manifest.icon.file)
-    }
-    icon = blobOf(path, MIME[extensionOf(path)])
-  }
-
-  let cover: Blob | undefined
-  if (manifest.cover) {
-    const path = normalizeEntryPath(manifest.cover.file)
-    if (!path || !paths.has(path)) {
-      throw new StylePackError('missingFile', manifest.cover.file)
-    }
-    const ext = extensionOf(path)
-    if (!COVER_EXT.has(ext)) {
-      throw new StylePackError('badFileType', manifest.cover.file)
-    }
-    const bytes = paths.get(path) as Uint8Array
-    if (bytes.length > MAX_COVER_BYTES) {
-      throw new StylePackError('badConfig', `cover file exceeds 5 MB: ${manifest.cover.file}`)
-    }
-    cover = blobOf(path, MIME[ext])
-  }
+  const icon = resolveManifestImages(manifest.icon, 'icon')
+  const cover = resolveManifestImages(manifest.cover, 'cover')
 
   let license: string | undefined
   if (manifest.license) {

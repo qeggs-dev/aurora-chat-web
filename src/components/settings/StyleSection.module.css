@@ -136,7 +136,58 @@
   overflow-wrap: anywhere;
 }
 
-/* ===== 详情页：同一区域内的视图切换（不是新弹窗 / 新设置分组） ===== */
+/* ===== 详情页：cover 铺满整个详情内容区，内容以半透明面板浮在背景上 ===== */
+
+/*
+ * 详情根容器就是详情内容区本身（直接放在设置弹窗的滚动列里）：
+ * cover 写在这里做整页背景，background-size: cover / center 保证铺满且无白边。
+ * 负外边距抵消滚动列的内边距，让背景 full-bleed 到内容区左右边缘。
+ *
+ * background-attachment: fixed：详情内容很高（滚动内容可达约 2800px），若让 cover
+ * 随内容一起按整段高度铺开，每屏只能看到 cover 极小的一条（顶部近乎纯色）。
+ * 固定到视口后，内容区任意滚动位置看到的都是 cover 的中段（极光带），
+ * 遮罩、hero 与面板同时浮在这张背景上，滚动时背景稳定、内容在它上面滑过。
+ */
+.detailRoot {
+  position: relative;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: 14px;
+  box-sizing: border-box;
+  margin: 0 -24px;
+  padding: 10px 24px 16px;
+  background-color: var(--dsw-alias-bg-base);
+  background-attachment: fixed;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  color: var(--dsw-alias-label-primary);
+}
+
+/*
+ * 与主题匹配的渐变遮罩：只负责把压在 cover 上的文字托起来，不再洗掉画面。
+ * 12% → 30% 的 --dsw-alias-bg-base 极淡渐变：亮色主题是极淡白雾、暗色主题是极淡黑雾，
+ * 主体内容区仍能明显看到 cover 的极光带；文字可读性主要由文字阴影与半透明面板兜底。
+ */
+.detailRoot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 12%, transparent) 0%,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 22%, transparent) 42%,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 30%, transparent) 100%
+  );
+  pointer-events: none;
+}
+
+/* 内容整体抬到背景与遮罩之上 */
+.detailRoot > * {
+  position: relative;
+  z-index: 1;
+}
 
 .detailBar {
   display: flex;
@@ -145,77 +196,31 @@
   gap: 8px 12px;
 }
 
-.backButton {
-  flex-shrink: 0;
-}
-
-.detailHeading {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.detailHeadingName {
-  color: var(--dsw-alias-label-primary);
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
+/* 返回按钮浮在封面/遮罩上：给一层主题底色，保证按钮文字始终可读 */
+.detailBar .backButton {
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 76%, transparent);
+  border-color: color-mix(in srgb, var(--dsw-alias-border-l2) 78%, transparent);
 }
 
 /*
- * 封面：cover 资源存在时铺满 hero（background-size: cover / center），
- * 叠加一层主题底色的渐变遮罩保证文字可读；没有 cover 时只留表面色。
+ * hero：包图标（按主题）+ 名称 + 作者·版本 + 使用中徽标，直接叠在背景顶部。
+ * 遮罩减到 12% 后 cover 的极光带会从 hero 下面穿过；这里给 hero 加一层很淡的
+ * 主题底色渐变（无边框、无投影，不是卡片），配合 text-shadow 保证标题/作者行
+ * 在任意 cover 位置上仍有 ≥4.5:1 的对比度。
  */
 .detailHero {
-  position: relative;
-  box-sizing: border-box;
-  overflow: hidden;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 14px;
-  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent);
-}
-
-.detailCover {
-  position: absolute;
-  inset: 0;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
-  transition: transform 200ms ease-out;
-  will-change: transform;
-}
-
-/* 封面 tilt 的透视容器：绝对铺满 hero，指针事件挂在这一层，cover 只负责 transform */
-.detailCoverFrame {
-  position: absolute;
-  inset: 0;
-}
-
-.detailHero::after {
-  content: '';
-  position: absolute;
-  inset: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 14px 12px;
+  border-radius: 16px;
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--dsw-alias-bg-base) 22%, transparent) 0%,
-    color-mix(in srgb, var(--dsw-alias-bg-base) 62%, transparent) 55%,
-    color-mix(in srgb, var(--dsw-alias-bg-base) 88%, transparent) 100%
+    color-mix(in srgb, var(--dsw-alias-bg-base) 74%, transparent) 0%,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 52%, transparent) 100%
   );
-  pointer-events: none;
-}
-
-.detailHeroBody {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  box-sizing: border-box;
-  min-height: 132px;
-  padding: 16px;
 }
 
 .detailHeroIcon {
@@ -223,11 +228,12 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   overflow: hidden;
-  border-radius: 12px;
-  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 70%, transparent);
+  border-radius: 14px;
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 66%, transparent);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -238,7 +244,7 @@
 }
 
 .detailHeroIconLetter {
-  font-size: 22px;
+  font-size: 24px;
   line-height: 1;
   font-weight: 600;
   text-transform: uppercase;
@@ -246,39 +252,53 @@
 
 .detailHeroText {
   display: flex;
+  flex: 1 1 200px;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 
 .detailHeroName {
   color: var(--dsw-alias-label-primary);
-  font-size: 18px;
-  line-height: 26px;
-  font-weight: 600;
+  font-size: 22px;
+  line-height: 30px;
+  font-weight: 700;
   overflow-wrap: anywhere;
-}
-
-.detailHeroDescription {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
-  overflow-wrap: anywhere;
+  /*
+   * 文字光晕取主题底色：亮色主题深字配浅晕、暗色主题浅字配深晕。
+   * 遮罩减弱后 cover 直接压在 hero 下面，这层阴影 + 描边式光晕保证标题/作者行仍然清晰。
+   */
+  text-shadow:
+    0 1px 2px color-mix(in srgb, var(--dsw-alias-bg-base) 90%, transparent),
+    0 0 10px color-mix(in srgb, var(--dsw-alias-bg-base) 72%, transparent);
 }
 
 .detailHeroMeta {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
   overflow-wrap: anywhere;
+  text-shadow:
+    0 1px 2px color-mix(in srgb, var(--dsw-alias-bg-base) 88%, transparent),
+    0 0 6px color-mix(in srgb, var(--dsw-alias-bg-base) 65%, transparent);
 }
 
+.detailHeroBadge {
+  margin-left: auto;
+}
+
+/* 内容分块：半透明主题面板（基础信息 / 资源清单 / 参数 / 调色板 / 许可）。
+ * 底色 68% 而不是 80%：面板之间能透出 cover，面板之上的文字仍由底色 + 模糊兜底。 */
 .detailSection {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 14px;
-  border-top: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 62%, transparent);
+  border-radius: 14px;
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 68%, transparent);
+  backdrop-filter: blur(8px) saturate(1.04);
 }
 
 .detailSectionTitle {
@@ -314,7 +334,7 @@
 
 .detailRowLabel {
   flex: 0 0 120px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font-size: 13px;
   line-height: 20px;
 }
@@ -344,9 +364,9 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 55%, transparent);
   border-radius: 10px;
-  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 64%, transparent);
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 44%, transparent);
 }
 
 .detailThemeTitle {
@@ -365,7 +385,7 @@
 
 .detailResourceLabel {
   flex: 0 0 112px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 20px;
 }
@@ -408,9 +428,9 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 55%, transparent);
   border-radius: 10px;
-  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 64%, transparent);
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 44%, transparent);
 }
 
 .detailParamTitle {
@@ -445,7 +465,7 @@
 }
 
 .detailParamKey {
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font-size: 11px;
   line-height: 16px;
 }
@@ -508,13 +528,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding-top: 4px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .detailCover {
-    transition: none;
-  }
+  padding: 4px 2px 0;
 }
 
 @media not all and (min-width: 768px) {
@@ -540,9 +554,19 @@
     flex-basis: 100%;
   }
 
-  .detailHeroBody {
-    flex-direction: column;
+  /* 窄屏时滚动列本身没有左内边距：只抵消右侧，避免出现横向溢出 */
+  .detailRoot {
+    margin-left: 0;
+    margin-right: -24px;
+    padding-left: 0;
+  }
+
+  .detailHero {
     align-items: flex-start;
+  }
+
+  .detailHeroBadge {
+    margin-left: 0;
   }
 
   .detailActions > button {

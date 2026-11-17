@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import { useRef, useState, type ReactNode } from 'react'
+import { useTheme } from '../../app/theme.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
 import { useSettings } from '../../services/settings.js'
 import {
@@ -8,13 +9,16 @@ import {
   removeStylePack,
   useStylePackState,
 } from '../../services/style/store.js'
-import { effectCss, useEffectsImage, useTilt } from '../../services/style/effects.js'
+import { effectCss, useEffectsImage } from '../../services/style/effects.js'
 import {
   PALETTE_KEYS,
   STYLE_PREFIX,
+  resolveStyleFileRef,
   type StyleAssetEntry,
+  type StyleFileRef,
   type StyleManifest,
   type StylePackSummary,
+  type ThemedUrls,
   type Theme,
 } from '../../services/style/types.js'
 import { StylePackError, type StylePackErrorCode } from '../../services/style/zip.js'
@@ -67,7 +71,27 @@ const importErrorStatus = (error: unknown): Status =>
 const cssUrl = (url: string): string => `url("${url.replace(/[\\"]/g, '\\$&')}")`
 
 /**
- * 包图标：effects 的静态部分（阴影 / 透明度 / alpha 派生图）。
+ * 取当前主题的图；该主题没有图时回退到另一主题（列表图标 / 详情封面都按这个规则展示）。
+ * 返回实际取到的主题，便于再取该主题专属的 effects。
+ */
+type PickedUrl = { theme: Theme; url: string }
+
+const pickThemedUrl = (urls: ThemedUrls | undefined, theme: Theme): PickedUrl | undefined => {
+  if (!urls) {
+    return undefined
+  }
+  const own = urls[theme]
+  if (own) {
+    return { theme, url: own }
+  }
+  const other: Theme = theme === 'light' ? 'dark' : 'light'
+  const fallback = urls[other]
+  return fallback ? { theme: other, url: fallback } : undefined
+}
+
+/**
+ * 包图标：跟随当前主题取图，effects 取实际所用主题的配置。
+ * 静态部分（阴影 / 透明度 / alpha 派生图）走 effectCss / useEffectsImage；
  * 包图标不允许 tilt（zip.ts 导入时已拒绝），因此这里不做透视处理。
  */
 const StylePackIcon = ({
@@ -79,11 +103,16 @@ const StylePackIcon = ({
   className: string
   letterClassName: string
 }) => {
-  const iconUrl = pack.iconUrl
-  const effects = pack.manifest.icon?.effects
+  const theme = useTheme()
+  const picked = pickThemedUrl(pack.iconUrls, theme)
+  const effects = picked ? resolveStyleFileRef(pack.manifest.icon, picked.theme)?.effects : undefined
   const tone = effectCss(effects)
-  const derived = useEffectsImage(iconUrl, effects, `pack-icon:${pack.id}`)
-  if (!iconUrl) {
+  const derived = useEffectsImage(
+    picked?.url,
+    effects,
+    picked ? `pack-icon:${pack.id}:${picked.theme}` : undefined
+  )
+  if (!picked) {
     return (
       <span className={letterClassName} aria-hidden="true">
         {pack.name.slice(0, 1)}
@@ -93,7 +122,7 @@ const StylePackIcon = ({
   return (
     <img
       className={className}
-      src={derived.url ?? iconUrl}
+      src={derived.url ?? picked.url}
       alt=""
       style={{
         filter: tone.filter,
@@ -185,9 +214,13 @@ const assetParam = (
   return entry.render ?? 'auto'
 }
 
+/** 顶层 icon / cover 在某个主题实际使用的文件；没有文件返回 undefined（不跨主题借用） */
+const themeFileOf = (ref: StyleFileRef | undefined, theme: Theme): string | undefined =>
+  resolveStyleFileRef(ref, theme)?.file
+
 const StylePackDetailContent = ({
   pack,
-  coverUrl,
+  coverUrls,
   activeId,
   busy,
   pending,
@@ -196,8 +229,8 @@ const StylePackDetailContent = ({
   onDelete,
 }: {
   pack: StylePackSummary
-  /** 详情页封面：启用中的包优先用 ActiveStyle.coverUrl，否则用列表 summary 的 coverUrl */
-  coverUrl?: string
+  /** 详情页封面（按主题）：启用中的包优先用 ActiveStyle.coverUrls，否则用列表 summary 的 coverUrls */
+  coverUrls?: ThemedUrls
   activeId: string | null
   busy: boolean
   pending: boolean
@@ -207,72 +240,65 @@ const StylePackDetailContent = ({
 }) => {
   const t = useTranslate()
   const locale = useSettings((state) => state.locale)
+  const theme = useTheme()
   const manifest = pack.manifest
   const isActive = pack.id === activeId
   const importedAt = new Date(pack.importedAt).toLocaleString(locale)
   const heroMeta = [
     pack.author ? `${t('stylePackAuthor')} ${pack.author}` : '',
     pack.version ? `${t('stylePackVersion')} ${pack.version}` : '',
-    pack.id,
   ]
     .filter(Boolean)
     .join(' · ')
 
-  const coverEffects = manifest.cover?.effects
-  const coverTone = effectCss(coverEffects)
-  const coverImage = useEffectsImage(coverUrl, coverEffects, `cover:${pack.id}`)
-  const coverTilt = useTilt(coverEffects?.tilt)
+  /** 包图标 / 封面在亮/暗主题的清单展示：“亮色主题 · assets/…”，旧包只写 file 时两个主题都会列出 */
+  const themedFileChips = (ref: StyleFileRef | undefined): string[] =>
+    THEME_LABELS.flatMap(({ theme: fileTheme, label }) => {
+      const file = themeFileOf(ref, fileTheme)
+      return file ? [`${t(label)} · ${file}`] : []
+    })
+
+  // 详情页 cover 作为整个内容区的背景：按当前主题取图，缺主题时回退另一主题；
+  // window / zoom 仍走 canvas 派生图，铺满内容区的背景只消费派生后的图（静态 effect 不再适用）。
+  const pickedCover = pickThemedUrl(coverUrls, theme)
+  const coverEffects = pickedCover
+    ? resolveStyleFileRef(manifest.cover, pickedCover.theme)?.effects
+    : undefined
+  const coverImage = useEffectsImage(
+    pickedCover?.url,
+    coverEffects,
+    pickedCover ? `cover:${pack.id}:${pickedCover.theme}` : undefined
+  )
+  const coverUrl = coverImage.url ?? pickedCover?.url
 
   return (
-    <>
+    <div
+      className={styles.detailRoot}
+      style={coverUrl ? { backgroundImage: cssUrl(coverUrl) } : undefined}
+    >
       <div className={styles.detailBar}>
         <Button variant="outlined" size="m" className={styles.backButton} onClick={onBack}>
           <span aria-hidden="true">←</span> {t('stylePackBack')}
         </Button>
-        <div className={styles.detailHeading}>
-          <span className={styles.detailHeadingName}>{pack.name}</span>
-          {isActive ? (
-            <span className={settingsStyles.stylePackBadge}>{t('stylePackInUse')}</span>
-          ) : null}
-        </div>
       </div>
 
       <div className={styles.detailHero}>
-        {coverUrl ? (
-          <div
-            className={styles.detailCoverFrame}
-            style={coverTilt.enabled ? coverTilt.frameStyle : undefined}
-            {...(coverTilt.enabled ? coverTilt.handlers : {})}
-          >
-            <div
-              className={styles.detailCover}
-              style={{
-                backgroundImage: cssUrl(coverImage.url ?? coverUrl),
-                filter: coverTone.filter,
-                opacity: coverTone.opacity,
-                transform: coverTilt.transform,
-                transformStyle: coverTilt.enabled ? 'preserve-3d' : undefined,
-              }}
-              aria-hidden="true"
-            />
-          </div>
-        ) : null}
-        <div className={styles.detailHeroBody}>
-          <span className={styles.detailHeroIcon}>
-            <StylePackIcon
-              pack={pack}
-              className={styles.detailHeroIconImage}
-              letterClassName={styles.detailHeroIconLetter}
-            />
-          </span>
-          <div className={styles.detailHeroText}>
-            <div className={styles.detailHeroName}>{pack.name}</div>
-            {pack.description ? (
-              <div className={styles.detailHeroDescription}>{pack.description}</div>
-            ) : null}
-            <div className={styles.detailHeroMeta}>{heroMeta}</div>
-          </div>
+        <span className={styles.detailHeroIcon}>
+          <StylePackIcon
+            pack={pack}
+            className={styles.detailHeroIconImage}
+            letterClassName={styles.detailHeroIconLetter}
+          />
+        </span>
+        <div className={styles.detailHeroText}>
+          <div className={styles.detailHeroName}>{pack.name}</div>
+          {heroMeta ? <div className={styles.detailHeroMeta}>{heroMeta}</div> : null}
         </div>
+        {isActive ? (
+          <span className={clsx(settingsStyles.stylePackBadge, styles.detailHeroBadge)}>
+            {t('stylePackInUse')}
+          </span>
+        ) : null}
       </div>
 
       <DetailSection title={t('stylePackDetailInfoSection')}>
@@ -351,23 +377,17 @@ const StylePackDetailContent = ({
           <div className={styles.detailThemeTitle}>{t('stylePackDetailPackageResources')}</div>
           <div className={styles.detailResourceRow}>
             <span className={styles.detailResourceLabel}>{t('stylePackDetailPackageIcon')}</span>
-            <span className={styles.detailResourceValue}>
-              {manifest.icon ? (
-                <code className={styles.detailCode}>{manifest.icon.file}</code>
-              ) : (
-                <span className={styles.detailMuted}>{t('stylePackDetailNotProvided')}</span>
-              )}
-            </span>
+            <DetailChips
+              items={themedFileChips(manifest.icon)}
+              empty={t('stylePackDetailNotProvided')}
+            />
           </div>
           <div className={styles.detailResourceRow}>
             <span className={styles.detailResourceLabel}>{t('stylePackDetailCover')}</span>
-            <span className={styles.detailResourceValue}>
-              {manifest.cover ? (
-                <code className={styles.detailCode}>{manifest.cover.file}</code>
-              ) : (
-                <span className={styles.detailMuted}>{t('stylePackDetailNotProvided')}</span>
-              )}
-            </span>
+            <DetailChips
+              items={themedFileChips(manifest.cover)}
+              empty={t('stylePackDetailNotProvided')}
+            />
           </div>
           <div className={styles.detailResourceRow}>
             <span className={styles.detailResourceLabel}>{t('stylePackDetailLicenseFile')}</span>
@@ -512,7 +532,7 @@ const StylePackDetailContent = ({
           {t('stylePackDelete')}
         </Button>
       </div>
-    </>
+    </div>
   )
 }
 
@@ -598,12 +618,14 @@ export const StyleSection = () => {
   }
 
   return (
-    <div className={styles.section} aria-busy={importing}>
+    <>
       {detailPack ? (
         <StylePackDetailContent
           pack={detailPack}
-          coverUrl={
-            detailPack.id === activeId && active?.coverUrl ? active.coverUrl : detailPack.coverUrl
+          coverUrls={
+            detailPack.id === activeId && active?.coverUrls
+              ? active.coverUrls
+              : detailPack.coverUrls
           }
           activeId={activeId}
           busy={busy}
@@ -613,7 +635,7 @@ export const StyleSection = () => {
           onDelete={() => setDeleteTarget(detailPack)}
         />
       ) : (
-        <>
+        <div className={styles.section} aria-busy={importing}>
           <div className={styles.header}>
             <div className={styles.headerText}>
               <div className={styles.title}>{t('stylePackSectionTitle')}</div>
@@ -783,7 +805,7 @@ export const StyleSection = () => {
               })}
             </ul>
           )}
-        </>
+        </div>
       )}
       {deleteTarget ? (
         <Modal
@@ -820,6 +842,6 @@ export const StyleSection = () => {
           <div className={styles.deleteName}>{deleteTarget.name}</div>
         </Modal>
       ) : null}
-    </div>
+    </>
   )
 }

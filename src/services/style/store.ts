@@ -17,6 +17,8 @@ import {
   STYLE_PREFIX,
   type StyleAssetEntry,
   type StylePackSummary,
+  type ThemedBlobs,
+  type ThemedUrls,
   type Theme,
 } from './types.js'
 
@@ -82,20 +84,54 @@ const resolveTheme = (
 /** 启用包的全部 objectURL：切换/清除时统一释放 */
 let activeUrls: string[] = []
 
-/** 列表摘要里的 objectURL（包图标与详情页封面）：刷新列表时整组重建并释放旧地址 */
-let summaryUrls: { icons: Map<string, string>; covers: Map<string, string> } = {
+/**
+ * 列表摘要里的 objectURL（包图标与详情页封面），按主题分开；
+ * 刷新列表时整组重建并释放旧地址。
+ */
+let summaryUrls: { icons: Map<string, ThemedUrls>; covers: Map<string, ThemedUrls> } = {
   icons: new Map(),
   covers: new Map(),
 }
 
+/**
+ * 把按主题的 Blob 各自建一个 objectURL（每个主题一个，未提供的主题跳过），
+ * 并把 URL 记进 `created` 以便调用方统一 revoke。
+ */
+const createThemeUrls = (
+  blobs: ThemedBlobs | undefined,
+  created: string[]
+): ThemedUrls | undefined => {
+  if (!blobs) {
+    return undefined
+  }
+  const urls: ThemedUrls = {}
+  for (const theme of ['light', 'dark'] as const) {
+    const blob = blobs[theme]
+    if (!blob) {
+      continue
+    }
+    const url = URL.createObjectURL(blob)
+    urls[theme] = url
+    created.push(url)
+  }
+  return urls.light || urls.dark ? urls : undefined
+}
+
+const themeUrlValues = (urls: ThemedUrls | undefined): string[] =>
+  urls ? Object.values(urls).filter((url): url is string => Boolean(url)) : []
+
 /** 当前列表摘要里仍在使用的 objectURL（派生图缓存按它判断哪些还能留） */
 const summarySourceUrls = (): Set<string> => {
   const keep = new Set<string>()
-  for (const url of summaryUrls.icons.values()) {
-    keep.add(url)
+  for (const urls of summaryUrls.icons.values()) {
+    for (const url of themeUrlValues(urls)) {
+      keep.add(url)
+    }
   }
-  for (const url of summaryUrls.covers.values()) {
-    keep.add(url)
+  for (const urls of summaryUrls.covers.values()) {
+    for (const url of themeUrlValues(urls)) {
+      keep.add(url)
+    }
   }
   return keep
 }
@@ -112,20 +148,19 @@ const pruneEffects = (activeUrlsToKeep: Iterable<string>): void => {
 const refreshPacks = async (): Promise<void> => {
   const stored = await listStoredStylePacks()
   // 先建好新 URL 再释放旧的，避免列表在渲染间隙引用已释放的地址
-  const nextIcons = new Map<string, string>()
-  const nextCovers = new Map<string, string>()
+  const nextIcons = new Map<string, ThemedUrls>()
+  const nextCovers = new Map<string, ThemedUrls>()
   const packs = stored.map((pack) => {
-    let iconUrl: string | undefined
-    let coverUrl: string | undefined
-    if (pack.icon) {
-      iconUrl = URL.createObjectURL(pack.icon)
-      nextIcons.set(pack.id, iconUrl)
+    const created: string[] = []
+    const iconUrls = createThemeUrls(pack.icon, created)
+    const coverUrls = createThemeUrls(pack.cover, created)
+    if (iconUrls) {
+      nextIcons.set(pack.id, iconUrls)
     }
-    if (pack.cover) {
-      coverUrl = URL.createObjectURL(pack.cover)
-      nextCovers.set(pack.id, coverUrl)
+    if (coverUrls) {
+      nextCovers.set(pack.id, coverUrls)
     }
-    return summarize(pack, { iconUrl, coverUrl })
+    return summarize(pack, { iconUrls, coverUrls })
   })
   const previous = summaryUrls
   summaryUrls = { icons: nextIcons, covers: nextCovers }
@@ -135,19 +170,19 @@ const refreshPacks = async (): Promise<void> => {
   const activeKeep: string[] = []
   if (active) {
     activeKeep.push(...Object.values(active.urls))
-    if (active.iconUrl) {
-      activeKeep.push(active.iconUrl)
-    }
-    if (active.coverUrl) {
-      activeKeep.push(active.coverUrl)
-    }
+    activeKeep.push(...themeUrlValues(active.iconUrls))
+    activeKeep.push(...themeUrlValues(active.coverUrls))
   }
   pruneEffects(activeKeep)
-  for (const url of previous.icons.values()) {
-    URL.revokeObjectURL(url)
+  for (const urls of previous.icons.values()) {
+    for (const url of themeUrlValues(urls)) {
+      URL.revokeObjectURL(url)
+    }
   }
-  for (const url of previous.covers.values()) {
-    URL.revokeObjectURL(url)
+  for (const urls of previous.covers.values()) {
+    for (const url of themeUrlValues(urls)) {
+      URL.revokeObjectURL(url)
+    }
   }
 }
 
@@ -209,16 +244,8 @@ export const activateStylePack = async (id: string | null): Promise<void> => {
       created.push(derivedUrl)
     }
   }
-  let iconUrl: string | undefined
-  if (pack.icon) {
-    iconUrl = URL.createObjectURL(pack.icon)
-    created.push(iconUrl)
-  }
-  let coverUrl: string | undefined
-  if (pack.cover) {
-    coverUrl = URL.createObjectURL(pack.cover)
-    created.push(coverUrl)
-  }
+  const iconUrls = createThemeUrls(pack.icon, created)
+  const coverUrls = createThemeUrls(pack.cover, created)
 
   const previous = activeUrls
   activeUrls = created
@@ -226,8 +253,8 @@ export const activateStylePack = async (id: string | null): Promise<void> => {
     id: pack.id,
     manifest: pack.manifest,
     urls,
-    iconUrl,
-    coverUrl,
+    iconUrls,
+    coverUrls,
     license: pack.license,
   }
   set({ activeId: pack.id, active })
@@ -251,8 +278,8 @@ export const importStylePack = async (file: File): Promise<void> => {
       id: parsed.manifest.id,
       manifest: parsed.manifest,
       assets,
-      icon: parsed.icon,
-      cover: parsed.cover,
+      icon: parsed.icon.light || parsed.icon.dark ? parsed.icon : undefined,
+      cover: parsed.cover.light || parsed.cover.dark ? parsed.cover : undefined,
       license: parsed.license,
       importedAt: Date.now(),
     })

@@ -192,6 +192,59 @@ export type StyleAssetEntry = {
   effects?: StyleEffects
 }
 
+/** 按主题分组的图片 Blob（包图标 / 封面）；缺某个主题表示该主题没有这张图 */
+export type ThemedBlobs = { light?: Blob; dark?: Blob }
+
+/** 按主题分组的 objectURL；与 ThemedBlobs 一一对应，每个 URL 单独 revoke */
+export type ThemedUrls = { light?: string; dark?: string }
+
+/** 单个主题下的包图标 / 封面文件（effects 可按主题不同） */
+export type StyleThemeFileRef = { file: string; effects?: StyleEffects }
+
+/** 主题无关的单文件形式：亮/暗主题共用同一张图 */
+export type StylePlainFileRef = { file: string; effects?: StyleEffects }
+
+/**
+ * 顶层 `icon` / `cover` 的引用，支持两种写法：
+ *
+ * - 主题无关：`{ "file": "icon.png", "effects": {...} }` —— 两个主题共用同一张图；
+ * - 按主题：`{ "light": { "file": "light/icon.png" }, "dark": { "file": "dark/icon.png" } }`
+ *   —— 每个主题可给不同文件；某个主题缺失文件时回退到同级的 `file`（都没有则该主题无图，
+ *   不跨主题借用）。包级 `effects` 两个主题共用，写在主题项里的 `effects` 覆盖包级值。
+ */
+export type StyleThemedFileRef = {
+  light?: StyleThemeFileRef
+  dark?: StyleThemeFileRef
+  file?: string
+  effects?: StyleEffects
+}
+
+export type StyleFileRef = StylePlainFileRef | StyleThemedFileRef
+
+/** 是否按主题分开了文件：只有出现 light / dark 时才算；只写 file 的仍按主题无关处理 */
+export const isThemedFileRef = (ref: StyleFileRef): ref is StyleThemedFileRef =>
+  'light' in ref || 'dark' in ref
+
+/**
+ * 取某个主题实际生效的文件与 effects。
+ * 按主题写法里该主题缺文件时只用同级的 `file` 兜底，不会借用另一主题的文件；
+ * 调用方如需「亮/暗互借」的展示回退，自行决定（列表图标 / 详情封面在 UI 层做）。
+ */
+export const resolveStyleFileRef = (
+  ref: StyleFileRef | undefined,
+  theme: Theme
+): StyleThemeFileRef | undefined => {
+  if (!ref) {
+    return undefined
+  }
+  if (!isThemedFileRef(ref)) {
+    return ref.file ? { file: ref.file, effects: ref.effects } : undefined
+  }
+  const entry = ref[theme]
+  const file = entry?.file ?? ref.file
+  return file ? { file, effects: entry?.effects ?? ref.effects } : undefined
+}
+
 /** 配色令牌键：color_palette 里每个主题可选的 13 个语义色 */
 export const PALETTE_KEYS = [
   'background',
@@ -341,10 +394,14 @@ export type StyleManifest = {
   author?: string
   version?: string
   sidebarTitle?: string
-  /** 包图标：可带静态 effects（tilt 报 badConfig） */
-  icon?: { file: string; effects?: StyleEffects }
-  /** 详情页封面（可选）：允许静态 effects 与 tilt（卡片偏转只在这里与图标资源上生效） */
-  cover?: { file: string; effects?: StyleEffects }
+  /** 包图标：可带静态 effects（tilt 报 badConfig）；`file` 或 `light` / `dark` 两种写法 */
+  icon?: StyleFileRef
+  /**
+   * 详情页封面（可选）：整页背景，亮/暗主题可各给一张。
+   * 仍接受静态 effects 与 tilt（旧包兼容），但整页背景只让 window / zoom 改变取图；
+   * opacity / shadow / 光效 / tilt 对铺满内容区的背景不再产生视觉效果（README 已说明）。
+   */
+  cover?: StyleFileRef
   license?: { file: string }
   color_palette?: StylePalette
   assets: Record<string, StyleAssetEntry>
@@ -357,9 +414,13 @@ export type StylePackSummary = {
   description?: string
   author?: string
   version?: string
-  iconUrl?: string
-  /** 封面图的 objectURL；列表刷新时与 iconUrl 一起 revoke */
-  coverUrl?: string
+  /**
+   * 包图标 objectURL，按主题分开；列表按当前主题取，缺该主题时回退另一主题。
+   * 旧字段 `iconUrl` 已移除：读库时把旧的单个 Blob 归一化成两个主题同一个图。
+   */
+  iconUrls?: ThemedUrls
+  /** 封面 objectURL，按主题分开；列表刷新时与 iconUrls 的每个主题 URL 一起 revoke */
+  coverUrls?: ThemedUrls
   importedAt: number
   /** 详情页的完整清单（资源槽位 / 参数 / 调色板 / sidebarTitle） */
   manifest: StyleManifest

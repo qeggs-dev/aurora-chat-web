@@ -21,6 +21,7 @@ import {
   type StyleAssetEntry,
   type StyleFit,
   type StyleManifest,
+  type ThemedUrls,
   type Theme,
 } from './types.js'
 
@@ -28,9 +29,10 @@ export type ActiveStyle = {
   id: string
   manifest: StyleManifest
   urls: Record<string, string>
-  iconUrl?: string
-  /** 详情页封面 blob URL（与列表 summary 的 coverUrl 各自独立，随启用状态释放） */
-  coverUrl?: string
+  /** 包图标 blob URL，按主题分开（列表 / 详情按当前主题取，缺主题时 UI 回退另一主题） */
+  iconUrls?: ThemedUrls
+  /** 详情页封面 blob URL，按主题分开（与列表 summary 的 coverUrls 各自独立，随启用状态释放） */
+  coverUrls?: ThemedUrls
   license?: string
 }
 
