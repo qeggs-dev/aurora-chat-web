@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAnchoredPosition, useDismiss } from './anchored.js'
 import { IconCheckOutline16, IconChevronDownOutline14 } from './icons.js'
+import { PackIcon } from './PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import styles from './Select.module.css'
 
 export type SelectOption<T extends string> = { value: T; label: string; lang?: string }
@@ -56,7 +58,7 @@ export const Select = <T extends string>({
           <span className={styles.placeholder}>{placeholder}</span>
         )}
         <span className={styles.arrow}>
-          <IconChevronDownOutline14 />
+          <PackIcon slot={STYLE_SLOTS.iconChevronDown} size={14} fallback={<IconChevronDownOutline14 />} />
         </span>
       </button>
       {open && !disabled
@@ -81,7 +83,9 @@ export const Select = <T extends string>({
                   }}
                 >
                   <span>{option.label}</span>
-                  {option.value === value ? <IconCheckOutline16 /> : null}
+                  {option.value === value ? (
+                    <PackIcon slot={STYLE_SLOTS.iconCheck} size={16} fallback={<IconCheckOutline16 />} />
+                  ) : null}
                 </div>
               ))}
             </div>,

@@ -17,7 +17,7 @@ export const MobileHeader = ({ title }: { title?: string }) => {
         tone="primary"
         icon={
           <PackIcon
-            slot={STYLE_SLOTS.iconEnterSidebar}
+            slot={STYLE_SLOTS.iconMobileMenu}
             size={20}
             fallback={<IconMenuOutline20 />}
           />
@@ -31,7 +31,13 @@ export const MobileHeader = ({ title }: { title?: string }) => {
           <IconButton
             size="xl"
             tone="primary"
-            icon={<IconNewChatOutline20 />}
+            icon={
+              <PackIcon
+                slot={STYLE_SLOTS.iconNewSession}
+                size={20}
+                fallback={<IconNewChatOutline20 />}
+              />
+            }
             aria-label={t('newChat')}
             onClick={newChat}
           />

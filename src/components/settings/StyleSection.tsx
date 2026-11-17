@@ -24,6 +24,8 @@ import {
 } from '../../services/style/types.js'
 import { StylePackError, type StylePackErrorCode } from '../../services/style/zip.js'
 import { Button } from '../base/Button.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import settingsStyles from './Settings.module.css'
@@ -279,7 +281,10 @@ const StylePackDetailContent = ({
     >
       <div className={styles.detailBar}>
         <Button variant="outlined" size="m" className={styles.backButton} onClick={onBack}>
-          <span aria-hidden="true">←</span> {t('stylePackBack')}
+          <span aria-hidden="true">
+            <PackIcon slot={STYLE_SLOTS.iconBack} size={14} fallback="←" />
+          </span>{' '}
+          {t('stylePackBack')}
         </Button>
       </div>
 

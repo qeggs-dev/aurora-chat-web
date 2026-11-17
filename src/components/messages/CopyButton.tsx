@@ -16,7 +16,13 @@ export const CopyButton = ({ text }: { text: string }) => {
 
   return (
     <IconButton
-      icon={copied ? <IconCheckOutline16 /> : <PackIcon slot={STYLE_SLOTS.iconCopy} fallback={<IconCopyOutline16 />} />}
+      icon={
+        copied ? (
+          <PackIcon slot={STYLE_SLOTS.iconCheck} fallback={<IconCheckOutline16 />} />
+        ) : (
+          <PackIcon slot={STYLE_SLOTS.iconCopy} fallback={<IconCopyOutline16 />} />
+        )
+      }
       tooltip={t('copy')}
       tooltipPlacement="bottom"
       onClick={async () => {

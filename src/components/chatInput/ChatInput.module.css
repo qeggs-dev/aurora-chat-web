@@ -73,7 +73,8 @@
   overflow: hidden;
   background-color: var(--dsw-alias-bg-skeleton);
 
-  img {
+  /* 只约束缩略图本身；PackIcon 渲染的样式包图标（img）也在 .attachment 内，不能套 100% */
+  > img {
     display: block;
     width: 100%;
     height: 100%;
@@ -129,7 +130,8 @@
   color: var(--dsw-static-neutral-bluish-00);
   background-color: rgba(0, 0, 0, 0.48);
 
-  svg {
+  svg,
+  img {
     width: 18px;
     height: 18px;
   }

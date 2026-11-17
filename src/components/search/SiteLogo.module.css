@@ -23,7 +23,9 @@
 .fallback {
   color: var(--dsw-alias-label-tertiary);
 
-  svg {
+  /* 兜底图标按容器尺寸缩放；PackIcon 用样式包图标时同样处理（img） */
+  svg,
+  img {
     width: 70%;
     height: 70%;
   }

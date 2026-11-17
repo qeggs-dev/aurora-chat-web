@@ -4,6 +4,8 @@ import { useTranslate } from '../../i18n/index.js'
 import { useUploads, type UploadTask } from '../../services/attachments.js'
 import type { DraftAttachment } from '../../services/chat/drafts.js'
 import { IconCloseFill14, IconRefreshOutline16 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { Tooltip } from '../base/Tooltip.js'
 import { FileCard } from '../files/FileCard.js'
 import styles from './ChatInput.module.css'
@@ -67,7 +69,7 @@ const AttachmentItem = ({
       {failed && retry ? (
         <Tooltip content={retryLabel}>
           <button type="button" className={styles.failed} aria-label={retryLabel} onClick={retry}>
-            <IconRefreshOutline16 />
+            <PackIcon slot={STYLE_SLOTS.iconRefresh} size={18} fallback={<IconRefreshOutline16 />} />
             {showReason ? <span className={styles.failedReason}>{error}</span> : null}
           </button>
         </Tooltip>
@@ -83,7 +85,7 @@ const AttachmentItem = ({
         aria-label={t('delete')}
         onClick={onRemove}
       >
-        <IconCloseFill14 />
+        <PackIcon slot={STYLE_SLOTS.iconRemove} size={14} fallback={<IconCloseFill14 />} />
       </button>
     </div>
   ) : (

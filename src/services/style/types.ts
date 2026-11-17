@@ -42,6 +42,26 @@ export const STYLE_SLOTS = {
   iconSettingDevice: `${STYLE_PREFIX}.icon.setting.device`,
   iconSettingDatas: `${STYLE_PREFIX}.icon.setting.datas`,
   iconSettingAbout: `${STYLE_PREFIX}.icon.setting.about`,
+  // 第二轮扩充（P0）：把界面上直接内联的 SVG / 字符替换成样式包可覆盖的槽位。
+  // 声明顺序与 README 资源 ID 表、tools/style-fixture/gen.mjs 的 40 槽位顺序保持一致。
+  iconClose: `${STYLE_PREFIX}.icon.close`,
+  iconRemove: `${STYLE_PREFIX}.icon.remove`,
+  iconCheck: `${STYLE_PREFIX}.icon.check`,
+  iconRefresh: `${STYLE_PREFIX}.icon.refresh`,
+  iconSearch: `${STYLE_PREFIX}.icon.search`,
+  iconWarning: `${STYLE_PREFIX}.icon.warning`,
+  iconLink: `${STYLE_PREFIX}.icon.link`,
+  iconChevronDown: `${STYLE_PREFIX}.icon.chevron_down`,
+  iconPlay: `${STYLE_PREFIX}.icon.play`,
+  iconUpload: `${STYLE_PREFIX}.icon.upload`,
+  iconDownload: `${STYLE_PREFIX}.icon.download`,
+  iconAdd: `${STYLE_PREFIX}.icon.add`,
+  iconBack: `${STYLE_PREFIX}.icon.back`,
+  iconMobileMenu: `${STYLE_PREFIX}.icon.mobile_menu`,
+  iconBrowse: `${STYLE_PREFIX}.icon.browse`,
+  iconSettingUsage: `${STYLE_PREFIX}.icon.setting.usage`,
+  iconSettingStyle: `${STYLE_PREFIX}.icon.setting.style`,
+  iconSettingPreset: `${STYLE_PREFIX}.icon.setting.preset`,
 } as const
 
 export type StyleSlot = (typeof STYLE_SLOTS)[keyof typeof STYLE_SLOTS]
@@ -60,31 +80,15 @@ export const BACKGROUND_SLOTS: StyleSlot[] = [
   STYLE_SLOTS.bgSettingAbout,
 ]
 
-/** 图标槽位：覆盖内置 SVG */
-export const ICON_SLOTS: StyleSlot[] = [
-  STYLE_SLOTS.iconNewSession,
-  STYLE_SLOTS.iconEnterSidebar,
-  STYLE_SLOTS.iconExitSidebar,
-  STYLE_SLOTS.iconThinking,
-  STYLE_SLOTS.iconNetwork,
-  STYLE_SLOTS.iconSoundInput,
-  STYLE_SLOTS.iconLinkFile,
-  STYLE_SLOTS.iconEdit,
-  STYLE_SLOTS.iconMenu,
-  STYLE_SLOTS.iconDelete,
-  STYLE_SLOTS.iconCopy,
-  STYLE_SLOTS.iconRegen,
-  STYLE_SLOTS.iconSend,
-  STYLE_SLOTS.iconStop,
-  STYLE_SLOTS.iconLeftArrow,
-  STYLE_SLOTS.iconRightArrow,
-  STYLE_SLOTS.iconSettingSetting,
-  STYLE_SLOTS.iconSettingLight,
-  STYLE_SLOTS.iconSettingDark,
-  STYLE_SLOTS.iconSettingDevice,
-  STYLE_SLOTS.iconSettingDatas,
-  STYLE_SLOTS.iconSettingAbout,
-]
+/**
+ * 图标槽位：覆盖内置 SVG。
+ * 直接从 STYLE_SLOTS 派生（过滤 `icon.` 前缀），不再手工维护第二份清单：
+ * 新增图标槽位只改上面的 STYLE_SLOTS，派生顺序 = 声明顺序 = README 资源 ID 表与
+ * tools/style-fixture/gen.mjs 的槽位顺序。当前没有消费方依赖这个顺序（只是列表 / 生成脚本使用）。
+ */
+export const ICON_SLOTS: StyleSlot[] = Object.values(STYLE_SLOTS).filter((slot) =>
+  slot.startsWith(`${STYLE_PREFIX}.icon.`)
+)
 
 export const slotId = (slot: string, theme: Theme) => `${slot}.${theme}`
 

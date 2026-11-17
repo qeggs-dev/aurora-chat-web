@@ -2,6 +2,8 @@ import type { CSSProperties } from 'react'
 import clsx from 'clsx'
 import { FallbackImage } from './FallbackImage.js'
 import { IconLinkOutline14 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import type { Source } from '../../services/chat/view.js'
 import styles from './SiteLogo.module.css'
 
@@ -18,7 +20,7 @@ export const SiteLogo = ({
   <FallbackImage
     key={url ?? ''}
     src={url ?? ''}
-    fallback={<IconLinkOutline14 />}
+    fallback={<PackIcon slot={STYLE_SLOTS.iconLink} size={14} fallback={<IconLinkOutline14 />} />}
     className={clsx(styles.logo, className)}
     imgClassName={styles.img}
     skeletonClassName={styles.placeholder}

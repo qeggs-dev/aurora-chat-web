@@ -45,7 +45,8 @@
   outline: none;
   transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
 
-  svg {
+  svg,
+  img {
     flex-shrink: 0;
   }
 
@@ -380,7 +381,8 @@
     height: 20px;
   }
 
-  .cellButton svg {
+  .cellButton svg,
+  .cellButton img {
     display: none;
   }
 }

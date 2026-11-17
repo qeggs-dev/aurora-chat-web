@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom'
 import { useTranslate } from '../../i18n/index.js'
 import { IconCloseOutline16 } from './icons.js'
 import { IconButton } from './IconButton.js'
+import { PackIcon } from './PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import styles from './Modal.module.css'
 
 /** 当前打开的弹窗，后打开的在末尾；叠放时 Esc 只关闭最上层 */
@@ -71,7 +73,9 @@ export const Modal = ({
             <IconButton
               className={styles.close}
               tone="primary"
-              icon={<IconCloseOutline16 />}
+              icon={
+                <PackIcon slot={STYLE_SLOTS.iconClose} size={14} fallback={<IconCloseOutline16 />} />
+              }
               aria-label={t('close')}
               onClick={onClose}
             />

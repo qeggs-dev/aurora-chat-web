@@ -64,7 +64,11 @@ const CodeInfoRow = ({
           setTimeout(() => setCopied(false), 1500)
         }}
       >
-        {copied ? <IconCheckOutline16 /> : <PackIcon slot={STYLE_SLOTS.iconCopy} fallback={<IconCopyOutline16 />} />}
+        {copied ? (
+          <PackIcon slot={STYLE_SLOTS.iconCheck} size={14} fallback={<IconCheckOutline16 />} />
+        ) : (
+          <PackIcon slot={STYLE_SLOTS.iconCopy} size={14} fallback={<IconCopyOutline16 />} />
+        )}
         <span>{t(copied ? 'copied' : 'copy')}</span>
       </button>
     </div>

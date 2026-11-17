@@ -95,7 +95,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         />
       ) : notice ? (
         <div className={styles.notice}>
-          <IconWarningOutline16 />
+          <PackIcon slot={STYLE_SLOTS.iconWarning} size={14} fallback={<IconWarningOutline16 />} />
           <span>
             {notice.text}
             {notice.action === 'apiKey' ? (

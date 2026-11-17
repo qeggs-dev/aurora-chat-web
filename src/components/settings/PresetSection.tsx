@@ -52,6 +52,8 @@ import {
   IconTrashOutline16,
   IconUploadOutline14,
 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { Modal } from '../base/Modal.js'
 import { Select, type SelectOption } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
@@ -1032,7 +1034,7 @@ export const PresetSection = () => {
           disabled={importing}
           onClick={() => fileRef.current?.click()}
         >
-          <IconUploadOutline14 />
+          <PackIcon slot={STYLE_SLOTS.iconUpload} size={14} fallback={<IconUploadOutline14 />} />
           {t(importing ? 'presetImporting' : 'presetImport')}
         </Button>
         <input
@@ -1112,7 +1114,7 @@ export const PresetSection = () => {
                 onClick={createNew}
               >
                 <span className={styles.plusIcon} aria-hidden="true">
-                  ＋
+                  <PackIcon slot={STYLE_SLOTS.iconAdd} size={14} fallback="＋" />
                 </span>
                 {t('presetNew')}
               </Button>
@@ -1622,7 +1624,7 @@ const MemoryPanel = ({ draft, api }: PanelProps) => {
       <div className={styles.memoryHeader}>
         <div className={styles.fieldLabel}>{t('presetMemoryListLabel')}</div>
         <Button variant="outlined" size="s" disabled={busy} onClick={() => void refreshList()}>
-          <IconRefreshOutline16 />
+          <PackIcon slot={STYLE_SLOTS.iconRefresh} size={14} fallback={<IconRefreshOutline16 />} />
           {t('presetMemoryRefresh')}
         </Button>
       </div>
@@ -1642,7 +1644,7 @@ const MemoryPanel = ({ draft, api }: PanelProps) => {
           }}
         />
         <Button variant="outlined" size="m" disabled={busy} onClick={() => void runSearch()}>
-          <IconSearchOutline16 />
+          <PackIcon slot={STYLE_SLOTS.iconSearch} size={14} fallback={<IconSearchOutline16 />} />
           {t('presetMemorySearch')}
         </Button>
       </div>
@@ -1672,7 +1674,7 @@ const MemoryPanel = ({ draft, api }: PanelProps) => {
                   disabled={busy}
                   onClick={() => void deleteEntry(entry.id)}
                 >
-                  <IconTrashOutline16 />
+                  <PackIcon slot={STYLE_SLOTS.iconDelete} size={14} fallback={<IconTrashOutline16 />} />
                 </Button>
               </div>
               <div className={styles.memoryContent}>{entry.content}</div>

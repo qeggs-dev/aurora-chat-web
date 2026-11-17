@@ -15,6 +15,8 @@ import {
   IconThinkOutline16,
 } from '../base/icons.js'
 import type { AssistantMessage } from '../../services/chat/types.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
+import { PackIcon } from '../base/PackIcon.js'
 import {
   getAreaTitle,
   isDeepSearchKind,
@@ -80,10 +82,18 @@ export const ReplyArea = memo(function ReplyArea({
       {title ? (
         <div className={styles.title} onClick={() => setOpen((value) => !value)}>
           <span className={clsx(styles.titleIcon, stopped && styles.stoppedIcon)}>
-            <IconThinkOutline16 />
+            <PackIcon slot={STYLE_SLOTS.iconThinking} size={16} fallback={<IconThinkOutline16 />} />
           </span>
           <span className={clsx(styles.titleText, titleActive && styles.shimmer)}>{title}</span>
-          {open ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}
+          {open ? (
+            <PackIcon
+              slot={STYLE_SLOTS.iconChevronDown}
+              size={14}
+              fallback={<IconChevronDownOutline14 />}
+            />
+          ) : (
+            <IconChevronRightOutline14 />
+          )}
         </div>
       ) : null}
       {open || !title ? (
@@ -253,7 +263,11 @@ const SearchRow = ({
       onClick={clickable ? () => toggleSearchPanel(panelEntry, step.results) : undefined}
     >
       <span className={styles.rowIcon}>
-        {failed ? <IconSearchWarningOutline16 /> : <IconSearchOutline16 />}
+        {failed ? (
+          <IconSearchWarningOutline16 />
+        ) : (
+          <PackIcon slot={STYLE_SLOTS.iconSearch} size={14} fallback={<IconSearchOutline16 />} />
+        )}
       </span>
       {body}
     </div>
@@ -312,7 +326,13 @@ const OpenRow = ({
   const panelEntry = `open-${step.pages[0]?.id}`
   return (
     <ToolRow
-      icon={allFailed ? <IconBrowseWarningOutline16 /> : <IconBrowseOutline16 />}
+      icon={
+        allFailed ? (
+          <IconBrowseWarningOutline16 />
+        ) : (
+          <PackIcon slot={STYLE_SLOTS.iconBrowse} size={14} fallback={<IconBrowseOutline16 />} />
+        )
+      }
       isLast={isLast}
     >
       {allFailed ? (
@@ -348,7 +368,13 @@ const FindRow = ({ step, isLast }: { step: FindStep; isLast: boolean }) => {
   const allFailed = step.patterns.every((item) => item.status === 'failed')
   return (
     <ToolRow
-      icon={allFailed ? <IconBrowseWarningOutline16 /> : <IconBrowseOutline16 />}
+      icon={
+        allFailed ? (
+          <IconBrowseWarningOutline16 />
+        ) : (
+          <PackIcon slot={STYLE_SLOTS.iconBrowse} size={14} fallback={<IconBrowseOutline16 />} />
+        )
+      }
       isLast={isLast}
     >
       {allFailed ? (
@@ -364,7 +390,19 @@ const FindRow = ({ step, isLast }: { step: FindStep; isLast: boolean }) => {
               <span className={clsx(styles.chip, item.status === 'failed' && styles.chipFailed)}>
                 {item.status === 'wip' ? null : (
                   <span className={styles.chipIcon}>
-                    {item.status === 'failed' ? <IconCloseFill14 /> : <IconCheckedOutline14 />}
+                    {item.status === 'failed' ? (
+                      <PackIcon
+                        slot={STYLE_SLOTS.iconRemove}
+                        size={12}
+                        fallback={<IconCloseFill14 />}
+                      />
+                    ) : (
+                      <PackIcon
+                        slot={STYLE_SLOTS.iconCheck}
+                        size={12}
+                        fallback={<IconCheckedOutline14 />}
+                      />
+                    )}
                   </span>
                 )}
                 <span className={styles.chipText}>{item.pattern}</span>
@@ -381,7 +419,10 @@ const FindRow = ({ step, isLast }: { step: FindStep; isLast: boolean }) => {
 const ReadLinkRow = ({ step, isLast }: { step: ReadLinkStep; isLast: boolean }) => {
   const t = useTranslate()
   return (
-    <ToolRow icon={<IconLinkOutline16 />} isLast={isLast}>
+    <ToolRow
+      icon={<PackIcon slot={STYLE_SLOTS.iconLink} size={14} fallback={<IconLinkOutline16 />} />}
+      isLast={isLast}
+    >
       <span className={clsx(styles.intro, styles.shimmer)}>{t('readingLink')}</span>
       {step.links.map((link) => (
         <PageLink key={link.id} page={link} />

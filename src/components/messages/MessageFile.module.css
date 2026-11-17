@@ -14,7 +14,8 @@
   font: inherit;
   text-decoration: none;
 
-  img {
+  /* 只约束缩略图本身；重试图标（PackIcon 的 img）在 .overlay 里，不能套 100% */
+  > img {
     display: block;
     width: 100%;
     height: 100%;
@@ -54,7 +55,8 @@ button.image {
   color: var(--dsw-static-neutral-bluish-00);
   background-color: rgba(0, 0, 0, 0.3);
 
-  svg {
+  svg,
+  img {
     width: 20px;
     height: 20px;
   }

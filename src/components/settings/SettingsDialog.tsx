@@ -30,7 +30,9 @@ import {
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
+import { PackIcon } from '../base/PackIcon.js'
 import { Select } from '../base/Select.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { showToast } from '../base/toastState.js'
 import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
@@ -54,13 +56,39 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
   {
     value: 'general',
     label: 'settingDialogAsideGeneralOptionLabel',
-    icon: <IconSettingsOutline16 />,
+    icon: (
+      <PackIcon
+        slot={STYLE_SLOTS.iconSettingSetting}
+        size={16}
+        fallback={<IconSettingsOutline16 />}
+      />
+    ),
   },
-  { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
-  { value: 'usage', label: 'usageSectionTitle', icon: <UsageIcon /> },
-  { value: 'style', label: 'stylePackSectionTitle', icon: <StyleIcon /> },
-  { value: 'preset', label: 'presetSectionTitle', icon: <PresetIcon /> },
-  { value: 'about', label: 'aboutTitle', icon: <InfoIcon /> },
+  {
+    value: 'data',
+    label: 'settingDialogAsideDataOptionLabel',
+    icon: <PackIcon slot={STYLE_SLOTS.iconSettingDatas} size={16} fallback={<IconDataOutline16 />} />,
+  },
+  {
+    value: 'usage',
+    label: 'usageSectionTitle',
+    icon: <PackIcon slot={STYLE_SLOTS.iconSettingUsage} size={16} fallback={<UsageIcon />} />,
+  },
+  {
+    value: 'style',
+    label: 'stylePackSectionTitle',
+    icon: <PackIcon slot={STYLE_SLOTS.iconSettingStyle} size={16} fallback={<StyleIcon />} />,
+  },
+  {
+    value: 'preset',
+    label: 'presetSectionTitle',
+    icon: <PackIcon slot={STYLE_SLOTS.iconSettingPreset} size={16} fallback={<PresetIcon />} />,
+  },
+  {
+    value: 'about',
+    label: 'aboutTitle',
+    icon: <PackIcon slot={STYLE_SLOTS.iconSettingAbout} size={16} fallback={<InfoIcon />} />,
+  },
 ]
 
 /** 内容区按分组叠加背景图；样式页本身不需要背景图，只用基础内容类 */
@@ -390,17 +418,23 @@ const themeOptions: { value: ThemePreference; label: TranslationKey; icon: React
   {
     value: 'light',
     label: 'avatarMenuSettingsDialogThemeSelectLightOption',
-    icon: <IconLightOutline16 />,
+    icon: <PackIcon slot={STYLE_SLOTS.iconSettingLight} size={16} fallback={<IconLightOutline16 />} />,
   },
   {
     value: 'dark',
     label: 'avatarMenuSettingsDialogThemeSelectDarkOption',
-    icon: <IconDarkOutline16 />,
+    icon: <PackIcon slot={STYLE_SLOTS.iconSettingDark} size={16} fallback={<IconDarkOutline16 />} />,
   },
   {
     value: 'system',
     label: 'avatarMenuSettingsDialogThemeSelectSystemOption',
-    icon: <IconFollowsystemOutline16 />,
+    icon: (
+      <PackIcon
+        slot={STYLE_SLOTS.iconSettingDevice}
+        size={16}
+        fallback={<IconFollowsystemOutline16 />}
+      />
+    ),
   },
 ]
 
@@ -534,7 +568,11 @@ const ImportHistory = ({
             disabled={disabled}
             onClick={() => inputRef.current?.click()}
           >
-            <IconUploadOutline14 />
+            <PackIcon
+              slot={STYLE_SLOTS.iconUpload}
+              size={14}
+              fallback={<IconUploadOutline14 />}
+            />
             {t('upload')}
           </Button>
           <input
@@ -594,7 +632,11 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
           disabled={disabled || busy || empty}
           onClick={() => void onExport()}
         >
-          <IconDownloadOutline16 />
+          <PackIcon
+            slot={STYLE_SLOTS.iconDownload}
+            size={14}
+            fallback={<IconDownloadOutline16 />}
+          />
           {t('exportAllDownload')}
         </Button>
       }

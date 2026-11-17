@@ -5,6 +5,8 @@ import {
   useReadAloud,
 } from '../../services/speech/readAloud.js'
 import { IconPlayMediaOutline16 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { IconButton } from '../base/IconButton.js'
 import { showToast } from '../base/toastState.js'
 import { ReadingBars } from './ReadingBars.js'
@@ -15,7 +17,13 @@ export const ReadAloudButton = ({ messageId, text }: { messageId: string; text: 
   const status = useReadAloud((state) => (state.messageId === messageId ? state.status : 'idle'))
   return (
     <IconButton
-      icon={status === 'idle' ? <IconPlayMediaOutline16 /> : <ReadingBars mode={status} />}
+      icon={
+        status === 'idle' ? (
+          <PackIcon slot={STYLE_SLOTS.iconPlay} size={16} fallback={<IconPlayMediaOutline16 />} />
+        ) : (
+          <ReadingBars mode={status} />
+        )
+      }
       tooltip={status === 'idle' ? t('ttsPlay') : t('ttsStop')}
       tooltipPlacement="bottom"
       onClick={() =>

@@ -5,6 +5,8 @@ import { useUploads } from '../../services/attachments.js'
 import { loadFile } from '../../services/chat/db.js'
 import type { FileAttachment } from '../../services/chat/types.js'
 import { IconPhotoErrorFill20, IconRefreshOutline16 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { Tooltip } from '../base/Tooltip.js'
 import { FileCard } from '../files/FileCard.js'
 import styles from './MessageFile.module.css'
@@ -126,7 +128,7 @@ export const MessageFile = ({
           >
             {preview}
             <div className={clsx(styles.overlay, styles.retryOverlay)}>
-              <IconRefreshOutline16 />
+              <PackIcon slot={STYLE_SLOTS.iconRefresh} size={20} fallback={<IconRefreshOutline16 />} />
             </div>
             {reason}
           </button>

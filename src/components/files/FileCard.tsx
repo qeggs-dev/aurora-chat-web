@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { formatSize, getExtension } from '../../services/attachments.js'
 import { IconCloseFill14, IconRefreshOutline16 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { FileIcon } from './FileIcon.js'
 import styles from './FileCard.module.css'
 
@@ -38,7 +40,7 @@ export const FileCard = ({
   } else if (status === 'error') {
     // 不可重试（过大、格式不支持）时保留文件图标并显示原因
     if (onRetry) {
-      icon = <IconRefreshOutline16 />
+      icon = <PackIcon slot={STYLE_SLOTS.iconRefresh} size={18} fallback={<IconRefreshOutline16 />} />
     }
     description = error ?? t('uploadFileStatusFailed')
   }
@@ -75,7 +77,7 @@ export const FileCard = ({
             onRemove()
           }}
         >
-          <IconCloseFill14 />
+          <PackIcon slot={STYLE_SLOTS.iconRemove} size={14} fallback={<IconCloseFill14 />} />
         </button>
       ) : null}
     </div>

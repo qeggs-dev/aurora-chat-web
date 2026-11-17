@@ -1,6 +1,8 @@
 import { useTranslate } from '../../i18n/index.js'
 import { IconCloseOutline16 } from '../base/icons.js'
 import { IconButton } from '../base/IconButton.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { closeSearchPanel, useSearchPanel } from './searchPanelState.js'
 import { SourceCard } from './SourceCard.js'
 import styles from './SearchPanel.module.css'
@@ -20,7 +22,9 @@ export const SearchPanel = () => {
           {t('searchResult')}
         </div>
         <IconButton
-          icon={<IconCloseOutline16 />}
+          icon={
+            <PackIcon slot={STYLE_SLOTS.iconClose} size={16} fallback={<IconCloseOutline16 />} />
+          }
           aria-label={t('close')}
           onClick={closeSearchPanel}
         />

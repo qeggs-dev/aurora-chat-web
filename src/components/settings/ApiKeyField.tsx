@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { IconEditOutline16 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { useSettings } from '../../services/settings.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { IconButton } from '../base/IconButton.js'
@@ -32,7 +34,7 @@ export const ApiKeyField = ({ editor }: { editor: ApiKeyEditor }) => {
             <span className={styles.apiKeyMask}>{'*'.repeat(apiKey.length)}</span>
             <IconButton
               tone="primary"
-              icon={<IconEditOutline16 />}
+              icon={<PackIcon slot={STYLE_SLOTS.iconEdit} size={20} fallback={<IconEditOutline16 />} />}
               tooltip={t('apiKeyEdit')}
               onClick={() => setEditing(true)}
             />

@@ -1,9 +1,14 @@
 {
-  "name": "chat-demo",
+  "name": "aurora-chat-web",
   "version": "0.3.3",
-  "description": "基于 DeepSeek API 的静态聊天示例。",
+  "description": "Aurora Chat web front-end (fork of deepseek-ai/chat-demo)",
   "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qeggs-dev/aurora-chat-web.git"
+  },
+  "homepage": "https://github.com/qeggs-dev/aurora-chat-app",
   "type": "module",
   "scripts": {
     "dev": "rspack serve -c rspack.config.ts",

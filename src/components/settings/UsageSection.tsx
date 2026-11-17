@@ -21,6 +21,8 @@ import {
 } from '../../services/usage/store.js'
 import { Button } from '../base/Button.js'
 import { IconRefreshOutline16 } from '../base/icons.js'
+import { PackIcon } from '../base/PackIcon.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import settingsStyles from './Settings.module.css'
@@ -155,7 +157,7 @@ const BalanceCard = ({ onOpenData }: { onOpenData: () => void }) => {
             disabled={loading}
             onClick={() => void load()}
           >
-            <IconRefreshOutline16 />
+            <PackIcon slot={STYLE_SLOTS.iconRefresh} size={14} fallback={<IconRefreshOutline16 />} />
             {t(loading ? 'usageBalanceRefreshing' : 'usageBalanceRefresh')}
           </Button>
         ) : null}
