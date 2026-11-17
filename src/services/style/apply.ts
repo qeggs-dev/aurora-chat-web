@@ -1,11 +1,25 @@
-/** 把启用样式包的资源写进 CSS 变量（资源在 :root，配色在 body）；变量归零时原主题样式自然恢复。 */
+/**
+ * 把启用样式包的资源写进 CSS 变量（资源在 :root，配色在 body）；变量归零时原主题样式自然恢复。
+ *
+ * 安全边界：清单里的字符串只经 sanitize 后的枚举/白名单值进入 CSSOM（`style.setProperty`），
+ * 从不拼 `cssText` / `<style>` 文本 / React style 字符串；URL 一律来自 `URL.createObjectURL`(blob:)，
+ * 且按 `url("…")` 加引号转义，包内路径只用于 zip 读取、不会变成资源地址。
+ */
 import {
   BACKGROUND_SLOTS,
   PALETTE_KEYS,
+  RENDER_CSS,
+  STYLE_ALIGN_DEFAULT,
+  STYLE_FIT_DEFAULT,
+  STYLE_RENDER_DEFAULT,
   STYLE_SLOTS,
+  isSafePosition,
   slotId,
   type PaletteColorKey,
   type PaletteColors,
+  type StyleAlign,
+  type StyleAssetEntry,
+  type StyleFit,
   type StyleManifest,
   type Theme,
 } from './types.js'
@@ -18,8 +32,11 @@ export type ActiveStyle = {
   license?: string
 }
 
-/** 样式包字体统一注册成这个名字，字体栈里排在内置字体之前 */
+/** 样式包字体统一注册成这个名字，字体栈里排在内置字体之前（不来自清单，因此没有注入面） */
 const PACK_FONT_FAMILY = 'DSLikePackFont'
+
+/** blob: URL 只来自 createObjectURL；仍统一加引号并转义，避免值里出现 `")` 逃逸出 url() */
+const cssUrl = (url: string): string => `url("${url.replace(/[\\"]/g, '\\$&')}")`
 
 /** 背景槽位到 CSS 变量名的稳定映射 */
 const BACKGROUND_SUFFIX: Record<string, string> = {
@@ -35,7 +52,15 @@ const BACKGROUND_SUFFIX: Record<string, string> = {
   [STYLE_SLOTS.bgSettingAbout]: 'setting-about',
 }
 
-type BackgroundVars = { image: string; alpha: string; brightness: string }
+type BackgroundVars = {
+  image: string
+  alpha: string
+  brightness: string
+  size: string
+  position: string
+  repeat: string
+  rendering: string
+}
 
 const backgroundVars = (slot: string): BackgroundVars | null => {
   const suffix = BACKGROUND_SUFFIX[slot]
@@ -46,13 +71,47 @@ const backgroundVars = (slot: string): BackgroundVars | null => {
     image: `--dslike-bg-${suffix}-image`,
     alpha: `--dslike-bg-${suffix}-alpha`,
     brightness: `--dslike-bg-${suffix}-brightness`,
+    size: `--dslike-bg-${suffix}-size`,
+    position: `--dslike-bg-${suffix}-position`,
+    repeat: `--dslike-bg-${suffix}-repeat`,
+    rendering: `--dslike-bg-${suffix}-rendering`,
   }
 }
 
 const REMOVABLE_BACKGROUND_VARS = BACKGROUND_SLOTS.flatMap((slot) => {
   const vars = backgroundVars(slot)
-  return vars ? [vars.image, vars.alpha, vars.brightness] : []
+  return vars ? Object.values(vars) : []
 })
+
+/** fit → background-size / background-repeat；缺省 cover / no-repeat，与扩展前完全一致 */
+const FIT_STYLE: Record<StyleFit, { size: string; repeat: string }> = {
+  cover: { size: 'cover', repeat: 'no-repeat' },
+  contain: { size: 'contain', repeat: 'no-repeat' },
+  stretch: { size: '100% 100%', repeat: 'no-repeat' },
+  tile: { size: 'auto', repeat: 'repeat' },
+}
+
+/** align → CSS background-position；custom 直接用 position 字段（已白名单校验） */
+const ALIGN_POSITION: Record<Exclude<StyleAlign, 'custom'>, string> = {
+  'top-left': 'left top',
+  'top-center': 'center top',
+  'top-right': 'right top',
+  'center-left': 'left center',
+  center: 'center',
+  'center-right': 'right center',
+  'bottom-left': 'left bottom',
+  'bottom-center': 'center bottom',
+  'bottom-right': 'right bottom',
+}
+
+/** 解析清单里的对齐方式；zip.ts 已净化，这里再兜底一次（旧数据 / 手工改库） */
+const backgroundPosition = (entry: StyleAssetEntry | undefined): string => {
+  const align = entry?.align
+  if (align === 'custom') {
+    return isSafePosition(entry?.position) ? entry.position : ALIGN_POSITION[STYLE_ALIGN_DEFAULT]
+  }
+  return (align && ALIGN_POSITION[align]) || ALIGN_POSITION[STYLE_ALIGN_DEFAULT]
+}
 
 /** 语义色 → 主题别名变量；别名定义在 body 上，所以配色必须写到 body.style 才盖得住 */
 const PALETTE_VARS: Record<PaletteColorKey, string[]> = {
@@ -214,7 +273,8 @@ const applyFont = async (active: ActiveStyle, theme: Theme, sequence: number): P
   const stack = readBaseFontFamily().replace(/\s+/g, ' ')
   let face: FontFace
   try {
-    face = new FontFace(PACK_FONT_FAMILY, `url(${url})`)
+    // family 用固定常量、source 只用带引号的 blob URL，清单里的字符串不参与字体声明
+    face = new FontFace(PACK_FONT_FAMILY, cssUrl(url))
     await face.load()
   } catch {
     // 字体加载失败时保留内置字体，不影响背景
@@ -251,9 +311,15 @@ export const applyStyleVars = async (active: ActiveStyle | null, theme: Theme): 
       continue
     }
     const asset = active.manifest.assets[assetId]
-    root.style.setProperty(vars.image, `url(${url})`)
+    const fit = FIT_STYLE[asset?.fit ?? STYLE_FIT_DEFAULT] ?? FIT_STYLE.cover
+    const render = RENDER_CSS[asset?.render ?? STYLE_RENDER_DEFAULT] ?? RENDER_CSS.auto
+    root.style.setProperty(vars.image, cssUrl(url))
     root.style.setProperty(vars.alpha, String(asset?.alpha ?? 1))
     root.style.setProperty(vars.brightness, String(1 + (asset?.exposure ?? 0)))
+    root.style.setProperty(vars.size, fit.size)
+    root.style.setProperty(vars.position, backgroundPosition(asset))
+    root.style.setProperty(vars.repeat, fit.repeat)
+    root.style.setProperty(vars.rendering, render)
   }
 
   applyPalette(active.manifest.color_palette?.[theme])

@@ -13,3 +13,9 @@ declare module 'prismjs/components/*' {}
 
 /** KaTeX 化学公式扩展通过副作用注册到 KaTeX */
 declare module 'katex/contrib/mhchem' {}
+
+/** 经 rspack `asset/resource` 输出的 wasm 资产，import 得到的是可 fetch 的 URL */
+declare module '*.wasm' {
+  const url: string
+  export default url
+}

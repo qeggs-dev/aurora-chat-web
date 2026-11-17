@@ -10,9 +10,10 @@
     position: absolute;
     inset: 0;
     background-image: var(--dslike-bg-chat-image, none);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
+    background-size: var(--dslike-bg-chat-size, cover);
+    background-position: var(--dslike-bg-chat-position, center);
+    background-repeat: var(--dslike-bg-chat-repeat, no-repeat);
+    image-rendering: var(--dslike-bg-chat-rendering, auto);
     opacity: var(--dslike-bg-chat-alpha, 1);
     filter: brightness(var(--dslike-bg-chat-brightness, 1));
     pointer-events: none;
@@ -77,6 +78,28 @@
   text-align: center;
   color: var(--dsw-alias-label-tertiary);
   user-select: none;
+}
+
+/* 启用样式包时输入区不再铺不透明底：让聊天背景透下来，只留很淡的渐变保证文字可读。
+   没有样式包时保持原来的实色底，避免默认界面出现透明接缝。 */
+:global(html[data-style-pack]) .inputContainer {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent 30%,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 34%, transparent) 30%,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 52%, transparent) 100%
+  );
+}
+
+:global(html[data-style-pack]) .header {
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 58%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+:global(html[data-style-pack]) .caveat {
+  color: color-mix(in srgb, var(--dsw-alias-label-tertiary) 82%, transparent);
+  text-shadow: 0 1px 2px color-mix(in srgb, var(--dsw-alias-bg-base) 65%, transparent);
 }
 
 @media not all and (min-width: 768px) {

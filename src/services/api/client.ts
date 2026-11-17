@@ -1,20 +1,53 @@
 import { translate, type TranslationMessage } from '../../i18n/index.js'
+import { getActivePreset, type PresetConfig } from '../preset/index.js'
 import { readMessageEvent } from './parseEvent.js'
+import {
+  buildEndpointUrl,
+  classifyProviderError,
+  createClient,
+  isProviderErrorLike,
+  resolveCapabilities,
+  type CanonicalAssistantBlock,
+  type CanonicalBlock,
+  type CanonicalMessage,
+  type CanonicalRequest,
+  type Capabilities,
+  type Delta,
+  type FinishReason,
+  type NormalizedCitation,
+  type Protocol,
+  type ProviderErrorCondition,
+  type ProviderProfile,
+  type ProviderUsage,
+} from './providers/index.js'
+import type { CanonicalTool, CanonicalToolResult } from './providers/types.js'
 import { readServerSentEvents } from './sse.js'
 import type {
   ApiErrorBody,
+  ClientToolParam,
   CreateMessageRequest,
+  FileBlockParam,
   FileObject,
   FilePurpose,
+  MessageParam,
   MessageStreamEvent,
+  MessageUsage,
+  OutputBlockStart,
+  StopReason,
+  TextBlockParam,
+  TextCitation,
+  ToolResultBlockParam,
 } from './types.js'
 
 /** 构建期 API 地址，默认 https://api.deepseek.com；本地开发支持开发服务器代理 */
 export const API_ORIGIN = __API_ORIGIN__
-/** Anthropic 兼容接口的前缀 */
+/** Anthropic 兼容接口的前缀（未启用预设时的默认端点） */
 const ANTHROPIC_BASE_URL = `${API_ORIGIN}/anthropic/v1`
 /** 引用 Files API 上传的图片、调用 Anthropic 兼容 Files API 时必须携带 */
 const FILES_BETA = 'files-api-2025-04-14'
+/** DeepSeek 的 Anthropic 兼容端点挂在 /anthropic 下；预设只写域名时由这里补全 */
+const DEEPSEEK_HOST = 'deepseek.com'
+const ANTHROPIC_SEGMENT = /\/anthropic(\/|$)/i
 
 export type ApiErrorKind =
   /** 非 2xx 响应 */
@@ -89,18 +122,192 @@ const anthropicHeaders = (apiKey: string, beta: boolean): Record<string, string>
   ...(beta ? { 'anthropic-beta': FILES_BETA } : {}),
 })
 
-/** 用 GET /models 校验 API Key（不产生费用） */
-export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promise<void> => {
-  await request(`${API_ORIGIN}/models`, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    signal,
-  })
+const hasFile = (body: CreateMessageRequest) =>
+  body.messages.some(
+    (message) =>
+      typeof message.content !== 'string' &&
+      message.content.some((block) => block.type === 'image' || block.type === 'document')
+  )
+
+/** 不支持 Files 的预设上传时返回的占位 file_id 前缀（见 uploadFile） */
+const SKIPPED_FILE_PREFIX = 'skipped-'
+
+const isSkippedFileId = (fileId: string): boolean => fileId.startsWith(SKIPPED_FILE_PREFIX)
+
+/**
+ * 去掉占位附件块：占位 id 只存在于本地，切回 DeepSeek 兼容预设后不能发给服务端。
+ * 全是占位附件的用户消息退化成空文本消息（Anthropic 不接受空 content 数组）。
+ */
+const stripSkippedFiles = (body: CreateMessageRequest): CreateMessageRequest => ({
+  ...body,
+  messages: body.messages.map((message) => {
+    if (message.role !== 'user' || typeof message.content === 'string') {
+      return message
+    }
+    const content = message.content.filter((block) => {
+      // 文本与客户端工具结果原样保留；只有文件块可能引用本地占位 file_id
+      if (block.type === 'text' || block.type === 'tool_result') {
+        return true
+      }
+      return !isSkippedFileId(block.source.file_id)
+    })
+    return content.length === 0 ? { role: 'user', content: '' } : { ...message, content }
+  }),
+})
+
+// ---------- 能力降级提示 ----------
+
+const warned = new Set<string>()
+
+/**
+ * 不支持的能力按规格「静默降级、只提示一次」：控制台提示便于排查，且不打断聊天。
+ * no-console 规则在这里显式豁免：降级不告警会让用户以为功能坏了。
+ */
+const warnOnce = (key: string, message: string) => {
+  if (warned.has(key)) {
+    return
+  }
+  warned.add(key)
+  // oxlint-disable-next-line no-console
+  console.warn(`[preset] ${message}`)
+}
+
+// ---------- 预设 → Profile ----------
+
+const PROTOCOL_BY_PRESET: Readonly<Record<PresetConfig['protocol'], Protocol>> = {
+  anthropic: 'anthropic-messages',
+  openai: 'openai-chat',
+  responses: 'openai-responses',
+}
+
+const isDeepseekBaseUrl = (raw: string): boolean => {
+  try {
+    const host = new URL(raw).hostname.toLowerCase()
+    return host === DEEPSEEK_HOST || host.endsWith(`.${DEEPSEEK_HOST}`)
+  } catch {
+    return false
+  }
 }
 
 /**
- * POST /anthropic/v1/files 上传附件（不设过期时间，会话里的历史附件一直可用）。
+ * DeepSeek 兼容端点：只有 anthropic + DeepSeek 域名保留 Files 附件、DeepSeek 私有字段
+ * （safety_check / title / 服务端工具）与 latest_reminder 角色。
+ */
+const isAnthropicDeepseekPreset = (preset: PresetConfig | null): boolean =>
+  preset !== null && preset.protocol === 'anthropic' && isDeepseekBaseUrl(preset.base_url)
+
+/** DeepSeek 的 Anthropic 兼容接口在 /anthropic 下；预设只给域名时补全，已带则原样保留 */
+const deepseekCompatBase = (baseUrl: string): string =>
+  ANTHROPIC_SEGMENT.test(baseUrl) ? baseUrl : `${baseUrl.replace(/\/+$/, '')}/anthropic`
+
+const toProfile = (preset: PresetConfig, apiKey: string): ProviderProfile => ({
+  id: preset.id,
+  label: preset.name,
+  protocol: PROTOCOL_BY_PRESET[preset.protocol],
+  baseUrl: preset.base_url,
+  apiKey,
+  model: preset.model,
+  // 适配层只承载官方 Anthropic（DeepSeek 兼容端点走旧路径并保留 latest_reminder 私有角色）
+  ...(preset.protocol === 'anthropic' ? { reminderRole: 'system' as const } : {}),
+})
+
+const deepseekAnthropicProfile = (preset: PresetConfig, apiKey: string): ProviderProfile => ({
+  ...toProfile(preset, apiKey),
+  baseUrl: deepseekCompatBase(preset.base_url),
+})
+
+/** Files API 只在「无预设（默认 DeepSeek 兼容端点）」或「anthropic + DeepSeek」时可用 */
+export const supportsFileUpload = (): boolean => {
+  const preset = getActivePreset()
+  return preset === null || isAnthropicDeepseekPreset(preset)
+}
+
+/** Files 端点与 messages 端点同目录：把 /messages 换成 /files */
+const filesEndpointUrl = (profile: ProviderProfile): string => {
+  const messages = buildEndpointUrl(profile)
+  return messages.includes('/messages')
+    ? messages.replace(/\/messages$/, '/files')
+    : `${messages}/files`
+}
+
+// ---------- 错误映射（providers/errors.ts → 现有 ApiError） ----------
+
+const isAbortError = (error: unknown): boolean =>
+  (error instanceof DOMException && error.name === 'AbortError') ||
+  (error instanceof Error && error.name === 'AbortError')
+
+/**
+ * 适配层错误换算成现有 ApiError，保持 classifyApiError / describeReply 的既有文案：
+ * 分类用 providers/errors.ts 的 classifyProviderError，再把「状态码与条件不一致」的情况
+ * 折算成 api/errors.ts 能识别的状态（例如 429 insufficient_quota → 402 余额不足、流内限流 → 429）。
+ */
+const STATUS_BY_CONDITION: Readonly<Partial<Record<ProviderErrorCondition, number>>> = {
+  unauthorized: 401,
+  insufficientBalance: 402,
+  tooLarge: 413,
+  rateLimited: 429,
+  serverBusy: 503,
+}
+
+const toApiError = (error: unknown, protocol: Protocol): unknown => {
+  if (isAbortError(error) || !isProviderErrorLike(error)) {
+    return error
+  }
+  const { condition } = classifyProviderError(error, protocol)
+  const status = STATUS_BY_CONDITION[condition] ?? error.status
+  switch (error.kind) {
+    case 'network':
+      return new ApiError('network', error.message)
+    case 'interrupted':
+      return new ApiError('interrupted', '')
+    case 'protocol':
+    case 'config':
+      return new ApiError('protocol', error.message)
+    case 'stream':
+      return new ApiError('stream', error.message, status)
+    default:
+      return new ApiError('http', error.message, status)
+  }
+}
+
+// ---------- 附件 / 校验 / 密钥 ----------
+
+/** 用 GET /models 校验 API Key（不产生费用）；启用预设时按预设端点与协议校验 */
+export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promise<void> => {
+  const preset = getActivePreset()
+  if (!preset) {
+    await request(`${API_ORIGIN}/models`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal,
+    })
+    return
+  }
+  // DeepSeek 的 /anthropic 兼容端点没有 /models，沿用默认端点的校验方式
+  if (isAnthropicDeepseekPreset(preset)) {
+    await request(`${API_ORIGIN}/models`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal,
+    })
+    return
+  }
+  const profile = toProfile(preset, apiKey)
+  try {
+    await createClient(profile).verify(signal)
+  } catch (error) {
+    throw toApiError(error, profile.protocol)
+  }
+}
+
+let skippedFileSequence = 0
+
+/**
+ * POST Files API 上传附件（不设过期时间，会话里的历史附件一直可用）。
  * purpose 为 null 时不传该字段（图片）；purpose 必须排在 file 之前。
+ *
+ * 不支持 Files 的预设（Chat / Responses / 非 DeepSeek 的 Anthropic）直接降级：返回占位对象、
+ * 只 warn 一次、不抛错，避免输入框因上传失败而阻塞发送；request 转换时这些附件会被跳过。
  */
 export const uploadFile = async (
   apiKey: string,
@@ -108,12 +315,31 @@ export const uploadFile = async (
   purpose: FilePurpose | null,
   signal?: AbortSignal
 ): Promise<FileObject> => {
+  const preset = getActivePreset()
+  if (preset && !isAnthropicDeepseekPreset(preset)) {
+    warnOnce(
+      'files',
+      `当前预设协议（${preset.protocol}）不支持 Files 附件，附件 ${file.name} 已跳过`
+    )
+    skippedFileSequence += 1
+    return {
+      id: `${SKIPPED_FILE_PREFIX}${skippedFileSequence}`,
+      type: 'file',
+      size_bytes: file.size,
+      created_at: new Date().toISOString(),
+      filename: file.name,
+      mime_type: file.type,
+    }
+  }
+  const url = preset
+    ? filesEndpointUrl(deepseekAnthropicProfile(preset, apiKey))
+    : `${ANTHROPIC_BASE_URL}/files`
   const form = new FormData()
   if (purpose) {
     form.append('purpose', purpose)
   }
   form.append('file', file)
-  const response = await request(`${ANTHROPIC_BASE_URL}/files`, {
+  const response = await request(url, {
     method: 'POST',
     headers: anthropicHeaders(apiKey, true),
     body: form,
@@ -122,38 +348,81 @@ export const uploadFile = async (
   return (await response.json()) as FileObject
 }
 
-/** DELETE /anthropic/v1/files/{file_id} */
+/** DELETE Files API 文件；不支持 Files 的预设没有可删对象，直接跳过 */
 export const deleteFile = async (apiKey: string, fileId: string): Promise<void> => {
-  await request(`${ANTHROPIC_BASE_URL}/files/${encodeURIComponent(fileId)}`, {
+  const preset = getActivePreset()
+  if (preset && !isAnthropicDeepseekPreset(preset)) {
+    return
+  }
+  const url = preset
+    ? `${filesEndpointUrl(deepseekAnthropicProfile(preset, apiKey))}/${encodeURIComponent(fileId)}`
+    : `${ANTHROPIC_BASE_URL}/files/${encodeURIComponent(fileId)}`
+  await request(url, {
     method: 'DELETE',
     headers: anthropicHeaders(apiKey, true),
   })
 }
 
-const hasFile = (body: CreateMessageRequest) =>
-  body.messages.some(
-    (message) =>
-      typeof message.content !== 'string' &&
-      message.content.some((block) => block.type === 'image' || block.type === 'document')
-  )
+// ---------- 旧 Anthropic 兼容路径（无预设 / DeepSeek anthropic 预设） ----------
 
 /**
- * POST /anthropic/v1/messages（stream: true），逐个产出流式事件，收到 message_stop 时结束。
- * ping、保活注释与无法解析的内容不产出；中止请求时抛出 signal 的 AbortError。
+ * 预设参数写进 DeepSeek Anthropic 兼容请求体：只带该协议支持的字段，
+ * penalties / seed / topK 等非 Anthropic 字段不发送（避免 400）。
  */
-export async function* streamMessage(
+const presetAnthropicBody = (
+  body: CreateMessageRequest,
+  preset: PresetConfig
+): Record<string, unknown> => {
+  const { params } = preset
+  // DeepSeek 兼容端点的硬约束：客户端工具（记忆工具）与 title / safety_check /
+  // 服务端工具同时出现时，请求必须处于 thinking 模式，否则返回
+  // "client tools can only be used together with ... in thinking mode"。
+  const hasClientTools =
+    Array.isArray(body.tools) && body.tools.some((tool) => 'input_schema' in tool)
+  const forceThinking = hasClientTools && body.thinking?.type !== 'enabled'
+  const wire: Record<string, unknown> = {
+    ...body,
+    model: preset.model,
+    stream: true,
+    max_tokens: params.max_tokens,
+    top_p: params.top_p,
+    ...(forceThinking ? { thinking: { type: 'enabled' as const } } : {}),
+  }
+  // 开启思考时部分模型拒收 temperature（与适配层一致：省略而不是置 1）
+  if (body.thinking?.type !== 'enabled' && !forceThinking) {
+    wire.temperature = params.temperature
+  }
+  if (params.stop.length > 0) {
+    wire.stop_sequences = params.stop
+  }
+  return wire
+}
+
+/**
+ * POST Anthropic 兼容 /messages（stream: true），逐个产出流式事件，收到 message_stop 时结束。
+ * ping、保活注释与无法解析的内容不产出；中止请求时抛出 signal 的 AbortError。
+ * preset 为 null 时与接入预设前完全一致；非 null 时只替换端点、model 与预设参数。
+ */
+async function* streamAnthropicCompat(
   apiKey: string,
   body: CreateMessageRequest,
-  signal: AbortSignal
+  signal: AbortSignal,
+  preset: PresetConfig | null
 ): AsyncGenerator<MessageStreamEvent> {
-  const response = await request(`${ANTHROPIC_BASE_URL}/messages`, {
+  const profile = preset ? deepseekAnthropicProfile(preset, apiKey) : null
+  const url = profile ? buildEndpointUrl(profile) : `${ANTHROPIC_BASE_URL}/messages`
+  const compatBody = stripSkippedFiles(body)
+  const wireBody: Record<string, unknown> = preset
+    ? presetAnthropicBody(compatBody, preset)
+    : { ...compatBody, stream: true }
+  const response = await request(url, {
     method: 'POST',
     headers: {
-      ...anthropicHeaders(apiKey, hasFile(body)),
+      ...anthropicHeaders(apiKey, hasFile(compatBody)),
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },
-    body: JSON.stringify({ ...body, stream: true }),
+    body: JSON.stringify(wireBody),
     signal,
   })
   const contentType = response.headers.get('Content-Type') ?? ''
@@ -186,4 +455,439 @@ export async function* streamMessage(
   }
   // 服务端没有提供错误内容时保持为空，不推测断流原因。
   throw new ApiError('interrupted', '')
+}
+
+/**
+ * 旧导出名：无预设（默认 DeepSeek Anthropic 兼容端点）的流式请求。
+ * 保留签名兼容，避免外部调用方（及离线测试）改动。
+ */
+export async function* streamMessage(
+  apiKey: string,
+  body: CreateMessageRequest,
+  signal: AbortSignal
+): AsyncGenerator<MessageStreamEvent> {
+  yield* streamAnthropicCompat(apiKey, body, signal, null)
+}
+
+// ---------- CanonicalRequest 转换 ----------
+
+const toCanonicalBlock = (block: FileBlockParam): CanonicalBlock => {
+  const fileId = block.source.file_id
+  if (block.type === 'image') {
+    // Files API 不返回 MIME；适配层在本协议内只按 file_id 引用，MIME 仅作为占位
+    return { type: 'image', mimeType: 'application/octet-stream', fileId }
+  }
+  return {
+    type: 'document',
+    mimeType: 'application/octet-stream',
+    filename: fileId,
+    fileId,
+  }
+}
+
+const toCanonicalUserMessage = (
+  content: string | (FileBlockParam | TextBlockParam | ToolResultBlockParam)[]
+): CanonicalMessage => {
+  if (typeof content === 'string') {
+    return { role: 'user', content }
+  }
+  const texts: string[] = []
+  const files: CanonicalBlock[] = []
+  const toolResults: CanonicalToolResult[] = []
+  for (const block of content) {
+    if (block.type === 'text') {
+      texts.push(block.text)
+      continue
+    }
+    if (block.type === 'tool_result') {
+      // 客户端工具结果：保留 JSON 原文，由各协议编译成 tool_result / tool / function_call_output
+      toolResults.push({
+        toolUseId: block.tool_use_id,
+        content: block.content,
+        ...(block.is_error ? { isError: true } : {}),
+      })
+      continue
+    }
+    if (isSkippedFileId(block.source.file_id)) {
+      // 不支持 Files 的预设返回的占位附件只在本地存在，不进入任何协议的请求
+      continue
+    }
+    files.push(toCanonicalBlock(block))
+  }
+  return {
+    role: 'user',
+    content: texts.join('\n\n'),
+    ...(files.length > 0 ? { files } : {}),
+    ...(toolResults.length > 0 ? { toolResults } : {}),
+  }
+}
+
+const toCanonicalAssistantMessage = (
+  message: Extract<MessageParam, { role: 'assistant' }>
+): CanonicalMessage => {
+  const blocks: CanonicalAssistantBlock[] = []
+  for (const block of message.content) {
+    switch (block.type) {
+      case 'text':
+        blocks.push({ type: 'text', text: block.text })
+        break
+      case 'thinking':
+        blocks.push({ type: 'thinking', text: block.thinking, signature: block.signature })
+        break
+      case 'tool_use':
+        blocks.push({ type: 'tool_use', id: block.id, name: block.name, input: block.input })
+        break
+      case 'server_tool_use':
+      case 'web_search_tool_result':
+      case 'web_fetch_tool_result':
+        blocks.push({
+          type: 'provider_block',
+          protocol: 'anthropic-messages',
+          payload: block,
+        })
+        break
+    }
+  }
+  return { role: 'assistant', blocks }
+}
+
+/**
+ * 把现有 Anthropic 形状的消息转成归一化消息：
+ * text / thinking 保留；服务端工具块作为同协议 provider_block 透传（跨协议由适配层丢弃）；
+ * file 块转成 image / document（仅支持 Files API 的协议能发出去，其余由适配层 warn 后跳过）。
+ * latest_reminder 转成 reminder，由适配层映射为同位置 system/developer（Chat/Responses）。
+ */
+const toCanonicalMessage = (message: MessageParam): CanonicalMessage => {
+  switch (message.role) {
+    case 'latest_reminder':
+      return { role: 'reminder', content: message.content }
+    case 'user':
+      return toCanonicalUserMessage(message.content)
+    case 'assistant':
+      return toCanonicalAssistantMessage(message)
+  }
+}
+
+/** 客户端工具：带 input_schema 的定义；服务端工具（DeepSeek 扩展）只在兼容端点有效 */
+const isClientTool = (tool: CreateMessageRequest['tools'][number]): tool is ClientToolParam =>
+  'input_schema' in tool
+
+const warnDroppedDeepseekFields = (
+  request: CreateMessageRequest,
+  preset: PresetConfig,
+  serverToolCount: number
+) => {
+  if (serverToolCount > 0 || request.safety_check || request.title?.enabled) {
+    warnOnce(
+      'deepseek-fields',
+      `当前预设协议（${preset.protocol}）不发送 DeepSeek 私有字段（safety_check / title / 服务端工具），已跳过`
+    )
+  }
+}
+
+const warnUnsupportedParams = (
+  preset: PresetConfig,
+  capabilities: Capabilities,
+  stop: string[]
+) => {
+  const { params } = preset
+  if (params.seed !== null && !capabilities.sampling.seed) {
+    warnOnce('seed', `当前预设协议不支持 seed，已忽略（${preset.name}）`)
+  }
+  if (
+    (params.presence_penalty !== 0 || params.frequency_penalty !== 0) &&
+    !capabilities.sampling.penalties
+  ) {
+    warnOnce('penalties', `当前预设协议不支持 penalties，已忽略（${preset.name}）`)
+  }
+  if (stop.length > 0 && !capabilities.stopSequences) {
+    warnOnce('stop', `当前预设协议不支持 stop 序列，已忽略（${preset.name}）`)
+  }
+}
+
+/**
+ * CreateMessageRequest（Anthropic 形状）→ CanonicalRequest。
+ * 参数一律来自预设；不支持的能力只 warn 一次并由适配层降级。
+ */
+const buildCanonicalRequest = (
+  request: CreateMessageRequest,
+  preset: PresetConfig,
+  profile: ProviderProfile
+): CanonicalRequest => {
+  const { params } = preset
+  const capabilities = resolveCapabilities(profile)
+  const stop = params.stop.filter((item) => item.trim() !== '')
+  warnUnsupportedParams(preset, capabilities, stop)
+  // 客户端工具（记忆工具）走统一适配层；服务端工具（DeepSeek 扩展）由 warnDroppedDeepseekFields 提示丢弃
+  const clientTools: CanonicalTool[] = request.tools.filter(isClientTool).map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.input_schema,
+  }))
+  const thinkingEnabled = request.thinking?.type === 'enabled'
+  const system = request.system?.trim() ? request.system : undefined
+  return {
+    model: preset.model,
+    ...(system === undefined ? {} : { system }),
+    messages: request.messages.map(toCanonicalMessage),
+    ...(clientTools.length > 0
+      ? { tools: clientTools, toolChoice: 'auto' as const }
+      : {}),
+    maxOutputTokens: params.max_tokens,
+    temperature: params.temperature,
+    topP: params.top_p,
+    ...(stop.length === 0 ? {} : { stop }),
+    ...(params.seed === null ? {} : { seed: params.seed }),
+    presencePenalty: params.presence_penalty,
+    frequencyPenalty: params.frequency_penalty,
+    thinking: {
+      enabled: thinkingEnabled,
+      ...(thinkingEnabled && params.reasoning_effort !== null
+        ? { effort: params.reasoning_effort }
+        : {}),
+    },
+    stream: true,
+  }
+}
+
+// ---------- Delta → MessageStreamEvent ----------
+
+const STOP_REASON_BY_FINISH: Readonly<Record<FinishReason, StopReason>> = {
+  end_turn: 'end_turn',
+  max_tokens: 'max_tokens',
+  tool_use: 'tool_use',
+  refusal: 'refusal',
+  // 现有 UI 只有四种结束原因：stop_sequence / stopped / error 都按正常结束展示
+  stop_sequence: 'end_turn',
+  stopped: 'end_turn',
+  error: 'end_turn',
+}
+
+const toMessageUsage = (usage: ProviderUsage): MessageUsage => ({
+  input_tokens: usage.inputTokens,
+  cache_creation_input_tokens: usage.cacheWriteTokens,
+  cache_read_input_tokens: usage.cacheReadTokens,
+  output_tokens: usage.outputTokens,
+  ...(usage.reasoningTokens === undefined ? {} : { reasoning_tokens: usage.reasoningTokens }),
+  ...(usage.serverToolUse === undefined
+    ? {}
+    : {
+        server_tool_use: {
+          web_search_requests: usage.serverToolUse.web_search_requests ?? 0,
+          tool_search: usage.serverToolUse.tool_search ?? 0,
+        },
+      }),
+})
+
+const toTextCitation = (citation: NormalizedCitation): TextCitation => ({
+  type: 'web_search_result_location',
+  url: citation.url,
+  title: citation.title,
+  cited_text: citation.citedText ?? '',
+  encrypted_index: '',
+})
+
+const readMetaRecord = (meta: unknown): Record<string, unknown> | null =>
+  meta !== null && typeof meta === 'object' ? (meta as Record<string, unknown>) : null
+
+/** block_start 的 Delta 没有正文内容；Anthropic 的 meta 带初始 wire 块，用于保留块级引用等 */
+const toBlockStart = (delta: Extract<Delta, { type: 'block_start' }>): OutputBlockStart => {
+  const meta = readMetaRecord(delta.meta)
+  switch (delta.kind) {
+    case 'text':
+      return { type: 'text', text: typeof meta?.text === 'string' ? meta.text : '' }
+    case 'thinking':
+      return {
+        type: 'thinking',
+        thinking: typeof meta?.thinking === 'string' ? meta.thinking : '',
+        signature: typeof meta?.signature === 'string' ? meta.signature : '',
+      }
+    case 'tool_use':
+      return {
+        type: 'tool_use',
+        id: typeof meta?.id === 'string' ? meta.id : '',
+        name: typeof meta?.name === 'string' ? meta.name : '',
+        input: meta?.input ?? {},
+      }
+    case 'provider_block':
+    default:
+      // 服务端工具块在 Anthropic 适配层原样透传；无法识别时给一个空文本块由上层丢弃
+      return (meta ?? { type: 'text', text: '' }) as OutputBlockStart
+  }
+}
+
+/**
+ * 三协议适配层路径：createClient(profile).stream() 的 Delta 还原成现有 MessageStreamEvent 序列，
+ * 让 reply.ts 的 applyEvent 保持不变（message_start / content_block_* / message_delta / message_stop）。
+ * finish 与 usage 谁后到都行：两者都齐了（或流收尾）再发 message_delta，保证 usage 不丢。
+ */
+async function* streamProviderAsEvents(
+  preset: PresetConfig,
+  apiKey: string,
+  request: CreateMessageRequest,
+  signal: AbortSignal
+): AsyncGenerator<MessageStreamEvent> {
+  const profile = toProfile(preset, apiKey)
+  const hasAttachments = request.messages.some(
+    (message) =>
+      typeof message.content !== 'string' &&
+      message.content.some((block) => block.type === 'image' || block.type === 'document')
+  )
+  if (hasAttachments) {
+    warnOnce(
+      'files',
+      `当前预设协议（${preset.protocol}）不支持 Files 附件，已跳过 ${preset.name} 请求里的附件`
+    )
+  }
+  warnDroppedDeepseekFields(
+    request,
+    preset,
+    request.tools.filter((tool) => !isClientTool(tool)).length
+  )
+  const canonical = buildCanonicalRequest(request, preset, profile)
+  const client = createClient(profile)
+  let started = false
+  let usage: ProviderUsage | undefined
+  let finish: { reason: FinishReason; stopSequence?: string | null } | undefined
+  let deltaSent = false
+
+  const startEvent = (messageId?: string, model?: string): MessageStreamEvent => ({
+    type: 'message_start',
+    message: { id: messageId ?? '', model: model ?? preset.model },
+  })
+  /**
+   * finish 与 usage 谁先到都可能：chat 的 usage 常跟在 finish_reason 之后，先别急着发
+   * message_delta，等 usage 到了再发；流结束（force）时即使没有 usage 也补齐。
+   */
+  const flushFinish = (force: boolean): MessageStreamEvent | null => {
+    if (deltaSent || finish === undefined || (!force && usage === undefined)) {
+      return null
+    }
+    deltaSent = true
+    return {
+      type: 'message_delta',
+      delta: {
+        stop_reason: STOP_REASON_BY_FINISH[finish.reason],
+        stop_sequence: null,
+      },
+      ...(usage === undefined ? {} : { usage: toMessageUsage(usage) }),
+    }
+  }
+
+  try {
+    for await (const delta of client.stream(canonical, signal)) {
+      switch (delta.type) {
+        case 'start':
+          if (!started) {
+            started = true
+            yield startEvent(delta.messageId, delta.model)
+          }
+          break
+        case 'block_start':
+          if (!started) {
+            started = true
+            yield startEvent()
+          }
+          yield {
+            type: 'content_block_start',
+            index: delta.index,
+            content_block: toBlockStart(delta),
+          }
+          break
+        case 'text':
+          yield {
+            type: 'content_block_delta',
+            index: delta.index,
+            delta: { type: 'text_delta', text: delta.text },
+          }
+          break
+        case 'thinking':
+          yield {
+            type: 'content_block_delta',
+            index: delta.index,
+            delta: { type: 'thinking_delta', thinking: delta.text },
+          }
+          break
+        case 'signature':
+          yield {
+            type: 'content_block_delta',
+            index: delta.index,
+            delta: { type: 'signature_delta', signature: delta.signature },
+          }
+          break
+        case 'citation':
+          yield {
+            type: 'content_block_delta',
+            index: delta.index,
+            delta: { type: 'citations_delta', citation: toTextCitation(delta.citation) },
+          }
+          break
+        case 'tool_call_delta':
+          // 客户端工具参数分片：reply.applyEvent 按块拼成完整 input，块结束时解析
+          yield {
+            type: 'content_block_delta',
+            index: delta.index,
+            delta: { type: 'input_json_delta', partial_json: delta.json },
+          }
+          break
+        case 'block_stop':
+          yield { type: 'content_block_stop', index: delta.index }
+          break
+        case 'usage':
+          if (delta.final) {
+            usage = delta.usage
+          }
+          break
+        case 'finish':
+          finish = {
+            reason: delta.reason,
+            ...(delta.stopSequence === undefined ? {} : { stopSequence: delta.stopSequence }),
+          }
+          break
+        case 'error': {
+          const mapped = toApiError(delta.error, profile.protocol)
+          throw mapped === delta.error ? delta.error : mapped
+        }
+      }
+      const finalDelta = flushFinish(false)
+      if (finalDelta) {
+        yield finalDelta
+      }
+    }
+  } catch (error) {
+    const mapped = toApiError(error, profile.protocol)
+    throw mapped === error ? error : mapped
+  }
+  if (!started) {
+    yield startEvent()
+  }
+  const finalDelta = flushFinish(true)
+  if (finalDelta) {
+    yield finalDelta
+  }
+  yield { type: 'message_stop' }
+}
+
+// ---------- 统一入口 ----------
+
+/**
+ * 聊天请求入口：按当前启用预设选择协议。
+ * - 未启用预设：保持改动前的 DeepSeek Anthropic 兼容端点与请求体（含 title / Files 附件）。
+ * - anthropic + DeepSeek 域名：同样走兼容路径，只替换预设的 base_url / model / 参数，
+ *   保留 thinking、服务端工具、safety_check 与 Files 附件（适配层 P0 不发附件，故不经过它）。
+ * - 其它（openai / responses / 官方 anthropic）：createClient(profile).stream()，
+ *   请求体经 CanonicalRequest 归一，流经 Delta 还原成 MessageStreamEvent。
+ * apiKey 沿用应用的 API Key 设置（预设不含密钥）。
+ */
+export async function* streamChat(
+  request: CreateMessageRequest,
+  signal: AbortSignal,
+  apiKey = ''
+): AsyncGenerator<MessageStreamEvent> {
+  const preset = getActivePreset()
+  if (preset === null || isAnthropicDeepseekPreset(preset)) {
+    yield* streamAnthropicCompat(apiKey, request, signal, preset)
+    return
+  }
+  yield* streamProviderAsEvents(preset, apiKey, request, signal)
 }

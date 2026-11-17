@@ -16,9 +16,10 @@
     position: absolute;
     inset: 0;
     background-image: var(--dslike-bg-sidebar-image, none);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
+    background-size: var(--dslike-bg-sidebar-size, cover);
+    background-position: var(--dslike-bg-sidebar-position, center);
+    background-repeat: var(--dslike-bg-sidebar-repeat, no-repeat);
+    image-rendering: var(--dslike-bg-sidebar-rendering, auto);
     opacity: var(--dslike-bg-sidebar-alpha, 1);
     filter: brightness(var(--dslike-bg-sidebar-brightness, 1));
     pointer-events: none;
@@ -87,9 +88,10 @@
     inset: 0;
     border-radius: inherit;
     background-image: var(--dslike-bg-new-session-image, none);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
+    background-size: var(--dslike-bg-new-session-size, cover);
+    background-position: var(--dslike-bg-new-session-position, center);
+    background-repeat: var(--dslike-bg-new-session-repeat, no-repeat);
+    image-rendering: var(--dslike-bg-new-session-rendering, auto);
     opacity: var(--dslike-bg-new-session-alpha, 1);
     filter: brightness(var(--dslike-bg-new-session-brightness, 1));
     pointer-events: none;

@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import { useSettings } from '../../services/settings.js'
 
-/** 设置弹窗的分组：通用设置 / 数据管理 / 样式 / 关于 */
-export type SettingsSection = 'general' | 'data' | 'style' | 'about'
+/** 设置弹窗的分组：通用设置 / 数据管理 / 用量统计 / 样式 / Preset / 关于 */
+export type SettingsSection = 'general' | 'data' | 'usage' | 'style' | 'preset' | 'about'
 
 /** 设置弹窗：侧边栏底部、没有 API Key 时的操作与 401 提示都可以打开；section 为打开时选中的分组 */
 export const useSettingsDialog = create(() => ({

@@ -34,12 +34,15 @@ import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import { PresetIcon, PresetSection } from './PresetSection.js'
 import { StyleIcon, StyleSection } from './StyleSection.js'
+import { UsageIcon, UsageSection } from './UsageSection.js'
 import styles from './Settings.module.css'
 
 /**
  * 设置弹窗：分「通用设置」（主题、语言、朗读音色、位置）、「数据管理」（API Key、导入、导出、删除）、
- * 「样式」（导入、启用、删除自定义样式包）与「关于」（非官方声明与上游许可）。
+ * 「用量统计」（请求与 token 统计、最近请求、余额查询、清空统计）、「样式」（导入、启用、删除自定义样式包）、
+ * 「Preset」（导入、手写 JSON 编辑、启用、删除 API 配置预设）与「关于」（非官方声明与上游许可）。
  * 桌面端为居中弹窗、左侧导航；移动端为底部弹层、导航横排在内容上方
  */
 export const SettingsDialog = () => {
@@ -54,29 +57,32 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
     icon: <IconSettingsOutline16 />,
   },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
+  { value: 'usage', label: 'usageSectionTitle', icon: <UsageIcon /> },
   { value: 'style', label: 'stylePackSectionTitle', icon: <StyleIcon /> },
+  { value: 'preset', label: 'presetSectionTitle', icon: <PresetIcon /> },
   { value: 'about', label: 'aboutTitle', icon: <InfoIcon /> },
 ]
 
 /** 内容区按分组叠加背景图；样式页本身不需要背景图，只用基础内容类 */
-/** 每个分组把对应槽位的背景变量映射到整卡背景上；没有样式包时变量为空，等同于无背景 */
+/** 把某个背景槽位的全部变量映射到整卡背景上；没有样式包时变量为空，等同于无背景 */
+const settingBackground = (suffix: string): CSSProperties =>
+  ({
+    '--dslike-setting-image': `var(--dslike-bg-${suffix}-image, none)`,
+    '--dslike-setting-alpha': `var(--dslike-bg-${suffix}-alpha, 1)`,
+    '--dslike-setting-brightness': `var(--dslike-bg-${suffix}-brightness, 1)`,
+    '--dslike-setting-size': `var(--dslike-bg-${suffix}-size, cover)`,
+    '--dslike-setting-position': `var(--dslike-bg-${suffix}-position, center)`,
+    '--dslike-setting-repeat': `var(--dslike-bg-${suffix}-repeat, no-repeat)`,
+    '--dslike-setting-rendering': `var(--dslike-bg-${suffix}-rendering, auto)`,
+  }) as CSSProperties
+
 const settingBackgrounds: Record<SettingsSection, CSSProperties> = {
-  general: {
-    '--dslike-setting-image': 'var(--dslike-bg-setting-generic-image, none)',
-    '--dslike-setting-alpha': 'var(--dslike-bg-setting-generic-alpha, 1)',
-    '--dslike-setting-brightness': 'var(--dslike-bg-setting-generic-brightness, 1)',
-  } as CSSProperties,
-  data: {
-    '--dslike-setting-image': 'var(--dslike-bg-setting-datas-image, none)',
-    '--dslike-setting-alpha': 'var(--dslike-bg-setting-datas-alpha, 1)',
-    '--dslike-setting-brightness': 'var(--dslike-bg-setting-datas-brightness, 1)',
-  } as CSSProperties,
+  general: settingBackground('setting-generic'),
+  data: settingBackground('setting-datas'),
+  usage: {},
   style: {},
-  about: {
-    '--dslike-setting-image': 'var(--dslike-bg-setting-about-image, none)',
-    '--dslike-setting-alpha': 'var(--dslike-bg-setting-about-alpha, 1)',
-    '--dslike-setting-brightness': 'var(--dslike-bg-setting-about-brightness, 1)',
-  } as CSSProperties,
+  preset: {},
+  about: settingBackground('setting-about'),
 }
 
 const SettingsContent = () => {
@@ -127,8 +133,12 @@ const SettingsContent = () => {
               <TtsVoiceSetting />
               <LocationSetting />
             </>
+          ) : section === 'usage' ? (
+            <UsageSection onOpenData={() => setSection('data')} />
           ) : section === 'style' ? (
             <StyleSection />
+          ) : section === 'preset' ? (
+            <PresetSection />
           ) : section === 'about' ? (
             <AboutSection />
           ) : (

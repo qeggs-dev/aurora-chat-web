@@ -4,6 +4,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#ffffff" />
+    <!--
+      样式包来自外部不可信 zip：CSP 收紧资源加载面。
+      - 样式包资源只允许 blob:（store 用 createObjectURL），包内路径永远不会变成 URL；
+      - img-src 保留 https: 供搜索结果的站点图标使用，font-src 只认本地与 blob；
+      - 不设 default-src / script-src，避免破坏 rspack 产物、sql.js wasm 与现有脚本；
+      - connect-src 保留 https:/http: 支持自定义 API base_url，ws:/wss: 仅供开发服务器 HMR。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="img-src 'self' blob: data: https:; font-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' https: http: ws: wss:; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'"
+    />
     <title>DSLike Chat</title>
   </head>
   <body>

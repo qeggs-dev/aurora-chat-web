@@ -85,7 +85,107 @@ export const ICON_SLOTS: StyleSlot[] = [
 
 export const slotId = (slot: string, theme: Theme) => `${slot}.${theme}`
 
-export type StyleAssetEntry = { file: string; alpha?: number; exposure?: number }
+/** 背景图缩放方式：cover 裁切铺满、contain 完整显示、stretch 拉伸铺满、tile 原尺寸平铺 */
+export type StyleFit = 'cover' | 'contain' | 'stretch' | 'tile'
+
+/**
+ * 背景图对齐方式：九宫格枚举 + custom。
+ * custom 时用 position 写任意 CSS background-position（如 `50% 20%`、`left 10px bottom 20%`）。
+ */
+export type StyleAlign =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'center-left'
+  | 'center'
+  | 'center-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right'
+  | 'custom'
+
+/** 图片插值（缩放采样）策略；映射到 CSS image-rendering，见 RENDER_CSS */
+export type StyleRender =
+  | 'auto'
+  | 'smooth'
+  | 'pixelated'
+  | 'crisp-edges'
+  | 'high-quality'
+  | 'optimize-speed'
+  | 'optimize-quality'
+
+/** 校验与文档共用的合法取值 */
+export const STYLE_FITS: readonly StyleFit[] = ['cover', 'contain', 'stretch', 'tile']
+
+export const STYLE_ALIGNS: readonly StyleAlign[] = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'center-left',
+  'center',
+  'center-right',
+  'bottom-left',
+  'bottom-center',
+  'bottom-right',
+  'custom',
+]
+
+export const STYLE_RENDERS: readonly StyleRender[] = [
+  'auto',
+  'smooth',
+  'pixelated',
+  'crisp-edges',
+  'high-quality',
+  'optimize-speed',
+  'optimize-quality',
+]
+
+/** 三个新字段缺省时的取值：与扩展前的表现完全一致（cover / center / auto） */
+export const STYLE_FIT_DEFAULT: StyleFit = 'cover'
+export const STYLE_ALIGN_DEFAULT = 'center'
+export const STYLE_RENDER_DEFAULT: StyleRender = 'auto'
+
+/**
+ * render → CSS image-rendering 关键字。
+ * smooth 在 Chromium 没有独立关键字，这里显式映射为浏览器默认的 auto；
+ * high-quality / optimizeSpeed / optimizeQuality 在不支持的内核上由 CSS 无效值回退到 auto，
+ * 不做 JS 特性检测。
+ */
+export const RENDER_CSS: Record<StyleRender, string> = {
+  auto: 'auto',
+  smooth: 'auto',
+  pixelated: 'pixelated',
+  'crisp-edges': 'crisp-edges',
+  'high-quality': 'high-quality',
+  'optimize-speed': 'optimizeSpeed',
+  'optimize-quality': 'optimizeQuality',
+}
+
+/**
+ * 自定义 background-position 的白名单：字符集、长度上限与危险函数共用一份，
+ * zip.ts 在导入时校验，apply.ts 写入 CSSOM 前再兜底一次。
+ */
+export const POSITION_PATTERN = /^[a-zA-Z0-9 %.,/+()-]{1,60}$/
+const POSITION_FORBIDDEN = /url\s*\(|expression\s*\(|\/\*/i
+
+/** 是否为安全的 CSS background-position 片段（拒绝 ; { } < > \ @ " ' 与 url()/expression()/注释） */
+export const isSafePosition = (value: unknown): value is string =>
+  typeof value === 'string' && POSITION_PATTERN.test(value) && !POSITION_FORBIDDEN.test(value)
+
+/**
+ * assets 项：`file` 必填，其余可选。
+ * `alpha` / `exposure` 只对图片有效；`fit` / `align` / `render` 见 README 的样式包规范。
+ */
+export type StyleAssetEntry = {
+  file: string
+  alpha?: number
+  exposure?: number
+  fit?: StyleFit
+  align?: StyleAlign
+  /** 仅 align=custom 时生效；其它情况忽略并 warn 一次 */
+  position?: string
+  render?: StyleRender
+}
 
 /** 配色令牌键：color_palette 里每个主题可选的 13 个语义色 */
 export const PALETTE_KEYS = [

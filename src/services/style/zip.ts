@@ -1,7 +1,22 @@
-/** 样式包 zip 的解析与校验：路径、大小、扩展名与清单字段都在这里把关。 */
+/** 样式包 zip 的解析与校验：路径、大小、扩展名、清单字段与字符串安全边界都在这里把关。 */
 import { unzipSync } from 'fflate'
-import { PALETTE_KEYS } from './types.js'
-import type { PaletteColors, StyleAssetEntry, StyleManifest, StylePalette } from './types.js'
+import {
+  PALETTE_KEYS,
+  STYLE_ALIGNS,
+  STYLE_FITS,
+  STYLE_PREFIX,
+  STYLE_RENDERS,
+  isSafePosition,
+} from './types.js'
+import type {
+  PaletteColors,
+  StyleAlign,
+  StyleAssetEntry,
+  StyleFit,
+  StyleManifest,
+  StylePalette,
+  StyleRender,
+} from './types.js'
 
 export type StylePackErrorCode =
   | 'tooLarge'
@@ -9,6 +24,7 @@ export type StylePackErrorCode =
   | 'notZip'
   | 'noIndex'
   | 'badIndex'
+  | 'badConfig'
   | 'badPath'
   | 'missingFile'
   | 'badFileType'
@@ -62,6 +78,30 @@ const isCssColor = (value: unknown): value is string =>
   typeof value === 'string' &&
   (HEX_COLOR.test(value) || RGB_COLOR.test(value) || HSL_COLOR.test(value) || value.toLowerCase() === 'transparent')
 
+/** 样式包校验告警（忽略无意义字段等）：项目全局禁 console，这里集中豁免一处 */
+// oxlint-disable-next-line no-console
+const warn = (message: string): void => console.warn(message)
+
+/**
+ * 纯文本字段（侧边栏标题 / 描述 / 作者 / 版本 / 许可证）拒绝尖括号与控制字符；
+ * 多行文本保留 \t \n \r。展示层仍走 React 文本，不做 HTML 解析。
+ */
+const isUnsafeText = (value: string, multiline: boolean): boolean => {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code === 0x3c || code === 0x3e) {
+      return true // < >
+    }
+    if (code === 0x7f || (code >= 0x80 && code <= 0x9f)) {
+      return true // DEL 与 C1 控制字符
+    }
+    if (code < 0x20 && !(multiline && (code === 0x09 || code === 0x0a || code === 0x0d))) {
+      return true // C0 控制字符
+    }
+  }
+  return false
+}
+
 /** 单个主题的配色：只认 13 个已知令牌，未知键忽略，值必须是合法 CSS 颜色 */
 const readPaletteColors = (raw: unknown, field: string): PaletteColors => {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -99,6 +139,91 @@ const readColorPalette = (raw: unknown): StylePalette | undefined => {
     palette.dark = readPaletteColors(record.dark, 'color_palette.dark')
   }
   return palette
+}
+
+/** 非关键文本字段（description / author / version）：类型/长度问题沿用 badIndex，内容不安全时丢弃并提示 */
+const readOptionalText = (value: unknown, field: string, multiline: boolean): string | undefined => {
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value !== 'string' || value.length > 400) {
+    throw new StylePackError('badIndex', `${field} must be a string of at most 400 chars`)
+  }
+  if (isUnsafeText(value, multiline)) {
+    warn(`[style-pack] index.json 的 ${field} 含控制字符或 <、>，已忽略该字段`)
+    return undefined
+  }
+  return value
+}
+
+/** sidebarTitle 会直接影响界面标题：长度/类型错误沿用 badIndex，内容不安全按 badConfig 致命拒绝 */
+const readSidebarTitle = (value: unknown): string | undefined => {
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value !== 'string' || value.length > 40) {
+    throw new StylePackError('badIndex', 'sidebarTitle must be a string of at most 40 chars')
+  }
+  if (isUnsafeText(value, false)) {
+    throw new StylePackError('badConfig', 'sidebarTitle contains control characters or < >')
+  }
+  return value.trim() || undefined
+}
+
+/** assets 项里的缩放 / 对齐 / 插值字段：出现时必须是合法枚举或安全的 CSS 片段 */
+const readAssetOptions = (entry: Record<string, unknown>, field: string): void => {
+  if (entry.fit !== undefined) {
+    if (typeof entry.fit !== 'string' || !STYLE_FITS.includes(entry.fit as StyleFit)) {
+      throw new StylePackError('badConfig', `${field}.fit must be one of ${STYLE_FITS.join('|')}`)
+    }
+  }
+  if (entry.align !== undefined) {
+    if (typeof entry.align !== 'string' || !STYLE_ALIGNS.includes(entry.align as StyleAlign)) {
+      throw new StylePackError('badConfig', `${field}.align must be one of ${STYLE_ALIGNS.join('|')}`)
+    }
+  }
+  if (entry.render !== undefined) {
+    if (typeof entry.render !== 'string' || !STYLE_RENDERS.includes(entry.render as StyleRender)) {
+      throw new StylePackError('badConfig', `${field}.render must be one of ${STYLE_RENDERS.join('|')}`)
+    }
+  }
+  if (entry.position !== undefined && !isSafePosition(entry.position)) {
+    throw new StylePackError(
+      'badConfig',
+      `${field}.position must be a safe CSS background-position of at most 60 chars`
+    )
+  }
+  if (entry.align === 'custom' && entry.position === undefined) {
+    throw new StylePackError('badConfig', `${field}.position is required when align is "custom"`)
+  }
+}
+
+/** 清掉某类资源上用不到的图片选项（图标只应用 render、字体/文本不应用任何图片选项） */
+const stripOptions = (
+  entry: StyleAssetEntry | undefined,
+  assetId: string,
+  keys: Array<'fit' | 'align' | 'position' | 'render'>,
+  reason: string
+): void => {
+  if (entry === null || typeof entry !== 'object') {
+    return
+  }
+  const present = keys.filter((key) => entry[key] !== undefined)
+  if (present.length === 0) {
+    return
+  }
+  warn(`[style-pack] ${assetId} 的 ${present.join(' / ')} 被忽略：${reason}`)
+  for (const key of present) {
+    if (key === 'fit') {
+      entry.fit = undefined
+    } else if (key === 'align') {
+      entry.align = undefined
+    } else if (key === 'position') {
+      entry.position = undefined
+    } else {
+      entry.render = undefined
+    }
+  }
 }
 
 /** 只接受包内相对路径：不允许绝对路径、`.`/`..` 与空段。 */
@@ -146,12 +271,20 @@ const readManifest = (text: string): StyleManifest => {
   if (record.assets === null || typeof record.assets !== 'object' || Array.isArray(record.assets)) {
     throw new StylePackError('badIndex', 'assets must be an object')
   }
-  const optionalString = (value: unknown) => value === undefined || (typeof value === 'string' && value.length <= 400)
-  if (!optionalString(record.description) || !optionalString(record.author) || !optionalString(record.version)) {
-    throw new StylePackError('badIndex', 'description/author/version must be short strings')
-  }
-  if (record.sidebarTitle !== undefined && (typeof record.sidebarTitle !== 'string' || record.sidebarTitle.length > 40)) {
-    throw new StylePackError('badIndex', 'sidebarTitle must be a string of at most 40 chars')
+  const assets = record.assets as Record<string, unknown>
+  for (const [assetId, entry] of Object.entries(assets)) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      // 结构问题留给后面的文件解析，沿用 missingFile，避免改变既有错误码
+      continue
+    }
+    const field = `assets["${assetId}"]`
+    readAssetOptions(entry as Record<string, unknown>, field)
+    // position 只在 align=custom 时生效：其它情况忽略并提示一次，不留在净化后的清单里
+    const assetEntry = entry as StyleAssetEntry
+    if (assetEntry.position !== undefined && assetEntry.align !== 'custom') {
+      warn(`[style-pack] ${field}.position 只在 align="custom" 时生效，已忽略`)
+      assetEntry.position = undefined
+    }
   }
   const ref = (value: unknown, field: string): string | undefined => {
     if (value === undefined) {
@@ -168,14 +301,14 @@ const readManifest = (text: string): StyleManifest => {
     schema: 1,
     id: record.id,
     name: record.name.trim(),
-    description: typeof record.description === 'string' ? record.description : undefined,
-    author: typeof record.author === 'string' ? record.author : undefined,
-    version: typeof record.version === 'string' ? record.version : undefined,
-    sidebarTitle: typeof record.sidebarTitle === 'string' && record.sidebarTitle.trim() ? record.sidebarTitle.trim() : undefined,
+    description: readOptionalText(record.description, 'description', true),
+    author: readOptionalText(record.author, 'author', false),
+    version: readOptionalText(record.version, 'version', false),
+    sidebarTitle: readSidebarTitle(record.sidebarTitle),
     icon: ref(record.icon, 'icon') ? { file: ref(record.icon, 'icon') as string } : undefined,
     license: ref(record.license, 'license') ? { file: ref(record.license, 'license') as string } : undefined,
     color_palette: colorPalette,
-    assets: record.assets as Record<string, StyleAssetEntry>,
+    assets: assets as Record<string, StyleAssetEntry>,
   }
 }
 
@@ -240,10 +373,16 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
       const alpha = typeof entry.alpha === 'number' && Number.isFinite(entry.alpha) ? Math.min(1, Math.max(0, entry.alpha)) : 1
       const exposure = typeof entry.exposure === 'number' && Number.isFinite(entry.exposure) ? Math.min(1, Math.max(-1, entry.exposure)) : 0
       assets[assetId] = { blob: blobOf(path, MIME[ext]), alpha, exposure, kind: 'image' }
+      if (assetId.startsWith(`${STYLE_PREFIX}.icon.`)) {
+        // 图标是定尺寸 <img>：fit / align / position 没有意义，只应用 render
+        stripOptions(entry, assetId, ['fit', 'align', 'position'], '图标只应用 render（image-rendering）')
+      }
     } else if (FONT_EXT.has(ext)) {
       assets[assetId] = { blob: blobOf(path, MIME[ext]), alpha: 1, exposure: 0, kind: 'font' }
+      stripOptions(entry, assetId, ['fit', 'align', 'position', 'render'], '字体资源不应用图片选项')
     } else if (TEXT_EXT.has(ext)) {
       assets[assetId] = { blob: blobOf(path, 'text/plain; charset=utf-8'), alpha: 1, exposure: 0, kind: 'font' }
+      stripOptions(entry, assetId, ['fit', 'align', 'position', 'render'], '文本资源不应用图片选项')
     } else {
       ignored.push(assetId)
     }
@@ -269,7 +408,12 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
     }
     const bytes = paths.get(path) as Uint8Array
     if (bytes.length <= MAX_LICENSE_BYTES) {
-      license = new TextDecoder().decode(bytes)
+      const text = new TextDecoder().decode(bytes)
+      if (isUnsafeText(text, true)) {
+        warn(`[style-pack] ${manifest.license.file} 含控制字符或 <、>，不展示许可证全文`)
+      } else {
+        license = text
+      }
     }
   }
 

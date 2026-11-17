@@ -11,7 +11,7 @@ import {
   summarize,
 } from './db.js'
 import { parseStylePackZip, StylePackError } from './zip.js'
-import { slotId, type StylePackSummary, type Theme } from './types.js'
+import { slotId, type StyleAssetEntry, type StylePackSummary, type Theme } from './types.js'
 
 export type StylePackState = {
   ready: boolean
@@ -75,36 +75,28 @@ const resolveTheme = (
 /** 启用包的全部 objectURL：切换/清除时统一释放 */
 let activeUrls: string[] = []
 
-const releaseActiveUrls = () => {
-  for (const url of activeUrls) {
-    URL.revokeObjectURL(url)
-  }
-  activeUrls = []
-}
-
 /** 列表图标单独一组 URL，刷新列表时重建 */
-const summaryIconUrls = new Map<string, string>()
-
-const releaseSummaryIcons = () => {
-  for (const url of summaryIconUrls.values()) {
-    URL.revokeObjectURL(url)
-  }
-  summaryIconUrls.clear()
-}
+let summaryIconUrls = new Map<string, string>()
 
 const refreshPacks = async (): Promise<void> => {
   const stored = await listStoredStylePacks()
-  releaseSummaryIcons()
+  // 先建好新图标 URL 再释放旧的，避免列表在渲染间隙引用已释放的地址
+  const nextIcons = new Map<string, string>()
   const packs = stored.map((pack) => {
     let iconUrl: string | undefined
     if (pack.icon) {
       iconUrl = URL.createObjectURL(pack.icon)
-      summaryIconUrls.set(pack.id, iconUrl)
+      nextIcons.set(pack.id, iconUrl)
     }
     return summarize(pack, iconUrl)
   })
+  const previousIcons = summaryIconUrls
+  summaryIconUrls = nextIcons
   packs.sort((a, b) => b.importedAt - a.importedAt)
   set({ packs })
+  for (const url of previousIcons.values()) {
+    URL.revokeObjectURL(url)
+  }
 }
 
 /** 递增序号：并发的启用请求只有最后一次生效 */
@@ -116,26 +108,36 @@ export const activateStylePack = async (id: string | null): Promise<void> => {
   if (sequence !== activationSequence) {
     return
   }
-  releaseActiveUrls()
+
+  // 释放旧 URL 放到新 URL 应用之后：否则主题切换/二次激活时，
+  // 变量可能短暂指向已经 revoke 的地址，图片会静默变成空白。
   if (!pack) {
+    const previous = activeUrls
+    activeUrls = []
     set({ activeId: null, active: null })
     writeActiveId(null)
     await applyStyleVars(null, resolveTheme())
+    for (const url of previous) {
+      URL.revokeObjectURL(url)
+    }
     return
   }
 
   const urls: Record<string, string> = {}
+  const created: string[] = []
   for (const [assetId, blob] of Object.entries(pack.assets)) {
     const url = URL.createObjectURL(blob)
     urls[assetId] = url
-    activeUrls.push(url)
+    created.push(url)
   }
   let iconUrl: string | undefined
   if (pack.icon) {
     iconUrl = URL.createObjectURL(pack.icon)
-    activeUrls.push(iconUrl)
+    created.push(iconUrl)
   }
 
+  const previous = activeUrls
+  activeUrls = created
   const active: ActiveStyle = {
     id: pack.id,
     manifest: pack.manifest,
@@ -146,6 +148,9 @@ export const activateStylePack = async (id: string | null): Promise<void> => {
   set({ activeId: pack.id, active })
   writeActiveId(pack.id)
   await applyStyleVars(active, resolveTheme())
+  for (const url of previous) {
+    URL.revokeObjectURL(url)
+  }
 }
 
 export const importStylePack = async (file: File): Promise<void> => {
@@ -230,13 +235,20 @@ export const initStylePacks = (): Promise<void> =>
 
 export const useStylePackState = (): StylePackState => useStylePackStore()
 
-/** 当前主题下某个槽位的 objectURL（完整 ID 由 slotId 拼出） */
-export const useStyleAssetUrl = (slot: string): string | undefined => {
+/** 当前主题下某个槽位的 objectURL 与清单元数据（图标插值方式等） */
+export type StyleAssetState = { url: string; meta?: StyleAssetEntry }
+
+export const useStyleAsset = (slot: string): StyleAssetState | undefined => {
   const preference = useSettings((state) => state.themePreference)
   const osTheme = useSyncExternalStore(subscribeOsTheme, getOsTheme)
   const active = useStylePackStore((state) => state.active)
-  return active?.urls[slotId(slot, resolveTheme(preference, osTheme))]
+  const assetId = slotId(slot, resolveTheme(preference, osTheme))
+  const url = active?.urls[assetId]
+  return url ? { url, meta: active?.manifest.assets[assetId] } : undefined
 }
+
+/** 当前主题下某个槽位的 objectURL（完整 ID 由 slotId 拼出） */
+export const useStyleAssetUrl = (slot: string): string | undefined => useStyleAsset(slot)?.url
 
 export const useStyleSidebarTitle = (): string | undefined => {
   const active = useStylePackStore((state) => state.active)

@@ -540,9 +540,10 @@
   z-index: 0;
   border-radius: inherit;
   background-image: var(--dslike-setting-image, none);
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
+  background-position: var(--dslike-setting-position, center);
+  background-repeat: var(--dslike-setting-repeat, no-repeat);
+  background-size: var(--dslike-setting-size, cover);
+  image-rendering: var(--dslike-setting-rendering, auto);
   opacity: var(--dslike-setting-alpha, 1);
   filter: brightness(var(--dslike-setting-brightness, 1));
   pointer-events: none;

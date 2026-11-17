@@ -2,6 +2,9 @@ import { useEffect } from 'react'
 import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
 import { initStylePacks } from '../services/style/store.js'
+import { initMemory, setMemoryEnabled } from '../services/memory/store.js'
+import { initPresets, usePresetStore } from '../services/preset/store.js'
+import { initUsage } from '../services/usage/store.js'
 import { useIsMobile, useMobileViewport, usePreventPageScroll } from './viewport.js'
 import {
   bindChatPersistence,
@@ -73,10 +76,26 @@ export const App = () => {
     void initChat()
     // 自定义样式包：读取已安装的包并应用当前启用的一套
     void initStylePacks()
+    // 记忆：预设恢复后才初始化（按当前预设的 memory.enabled 决定是否给模型挂记忆工具）
+    // 之后切换预设（activatePreset）时同步记忆开关，关闭记忆时请求里不出现任何工具。
+    let memoryReady = false
+    void initPresets().then(() => {
+      void initMemory(usePresetStore.getState().active?.memory.enabled ?? false)
+      memoryReady = true
+    })
+    const unsubscribePreset = usePresetStore.subscribe((state, previous) => {
+      if (!memoryReady || state.active === previous.active) {
+        return
+      }
+      void setMemoryEnabled(state.active?.memory.enabled ?? false)
+    })
+    // 用量：恢复最近请求记录（统计面板用）
+    void initUsage()
     // 首次使用先确认非官方声明；确认后再要求 API Key
     if (useSettings.getState().disclaimerAccepted) {
       ensureApiKey()
     }
+    return unsubscribePreset
   }, [])
 
   return (

@@ -63,7 +63,46 @@ export type TextPart = {
 }
 
 /** 服务端工具调用与结果块按协议原样保存；历史请求只回传 read_link 调用与结果 */
-export type ReplyBlock = ThinkingPart | TextPart | ServerToolBlock
+export type ReplyBlock =
+  | ThinkingPart
+  | TextPart
+  | ServerToolBlock
+  | ClientToolUsePart
+  | ClientToolResultPart
+
+/**
+ * 客户端工具调用块（记忆工具）：content_block_start(tool_use) 建立块，
+ * input_json_delta 累积到 inputJson，content_block_stop 时解析成完整 input。
+ * 历史请求按 assistant 消息的 tool_use 块回传。
+ */
+export type ClientToolUsePart = {
+  type: 'tool_use'
+  /** 协议侧工具调用 id；tool_result 用它对应回灌 */
+  id: string
+  name: string
+  input: unknown
+  /** 流式接收中的参数 JSON 原文；块结束后清空 */
+  inputJson?: string
+  /** content_block_start 的时间 */
+  startedAt?: number
+  /** content_block_stop（或回复结束）的时间 */
+  endedAt?: number
+}
+
+/**
+ * 客户端工具结果块：由 store 的工具循环执行 runMemoryTool 后追加，
+ * content 是工具返回的 JSON 原文（含 ok:false 的结构化错误），随历史按 user 消息回传。
+ */
+export type ClientToolResultPart = {
+  type: 'tool_result'
+  /** 对应 ClientToolUsePart.id */
+  toolUseId: string
+  content: string
+  /** 工具返回结构化错误时的标记，映射为各协议的错误标记 */
+  isError?: boolean
+  startedAt?: number
+  endedAt?: number
+}
 
 /**
  * pending：已发出请求，还没收到事件；streaming：正在接收；
@@ -105,6 +144,21 @@ export type AssistantMessage = MessageBranch & {
 
 export type Message = UserMessage | AssistantMessage
 
+/**
+ * 自动上下文压缩（compaction）的结果：请求时把 coveredMessageIds 覆盖的原消息换成 summary，
+ * 被覆盖的原始消息仍保留在 messages 里（可回看），只是不再进入请求上下文。
+ */
+export type SessionCompaction = {
+  /** 模型生成的结构化摘要正文（不含 <compacted-summary> 包装） */
+  summary: string
+  /** 被摘要覆盖的原始消息 id；必须是当前分支消息列表的前缀 */
+  coveredMessageIds: string[]
+  /** 被覆盖原文的估算 token 数（触发时约等于压缩掉的压力） */
+  tokens: number
+  /** 摘要生成时间（毫秒时间戳） */
+  at: number
+}
+
 export type Session = {
   id: string
   title: string
@@ -114,6 +168,8 @@ export type Session = {
   messages: Message[]
   /** undefined 表示线性消息列表；null 表示空会话。 */
   rootMessageId?: string | null
+  /** 最近一次自动压缩；缺失表示尚未压缩过（旧数据没有该字段）。 */
+  compaction?: SessionCompaction
 }
 
 /** 会话列表元数据；消息只在打开会话时加载。 */

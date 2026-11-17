@@ -18,9 +18,10 @@
     inset: 0;
     border-radius: inherit;
     background-image: var(--dslike-bg-normal-session-image, none);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
+    background-size: var(--dslike-bg-normal-session-size, cover);
+    background-position: var(--dslike-bg-normal-session-position, center);
+    background-repeat: var(--dslike-bg-normal-session-repeat, no-repeat);
+    image-rendering: var(--dslike-bg-normal-session-rendering, auto);
     opacity: var(--dslike-bg-normal-session-alpha, 1);
     filter: brightness(var(--dslike-bg-normal-session-brightness, 1));
     pointer-events: none;
@@ -38,6 +39,10 @@
 
     &::before {
       background-image: var(--dslike-bg-selected-session-image, none);
+      background-size: var(--dslike-bg-selected-session-size, cover);
+      background-position: var(--dslike-bg-selected-session-position, center);
+      background-repeat: var(--dslike-bg-selected-session-repeat, no-repeat);
+      image-rendering: var(--dslike-bg-selected-session-rendering, auto);
       opacity: var(--dslike-bg-selected-session-alpha, 1);
       filter: brightness(var(--dslike-bg-selected-session-brightness, 1));
     }

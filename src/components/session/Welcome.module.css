@@ -9,9 +9,10 @@
     position: absolute;
     inset: 0;
     background-image: var(--dslike-bg-main-image, none);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
+    background-size: var(--dslike-bg-main-size, cover);
+    background-position: var(--dslike-bg-main-position, center);
+    background-repeat: var(--dslike-bg-main-repeat, no-repeat);
+    image-rendering: var(--dslike-bg-main-rendering, auto);
     opacity: var(--dslike-bg-main-alpha, 1);
     filter: brightness(var(--dslike-bg-main-brightness, 1));
     pointer-events: none;

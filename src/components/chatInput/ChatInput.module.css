@@ -20,9 +20,10 @@
     position: absolute;
     inset: 0;
     background-image: var(--dslike-bg-input-box-image, none);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
+    background-size: var(--dslike-bg-input-box-size, cover);
+    background-position: var(--dslike-bg-input-box-position, center);
+    background-repeat: var(--dslike-bg-input-box-repeat, no-repeat);
+    image-rendering: var(--dslike-bg-input-box-rendering, auto);
     opacity: var(--dslike-bg-input-box-alpha, 1);
     filter: brightness(var(--dslike-bg-input-box-brightness, 1));
     pointer-events: none;

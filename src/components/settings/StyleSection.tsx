@@ -33,6 +33,7 @@ const importErrorKeys: Record<StylePackErrorCode, TranslationKey> = {
   notZip: 'stylePackErrorNotZip',
   noIndex: 'stylePackErrorNoIndex',
   badIndex: 'stylePackErrorBadIndex',
+  badConfig: 'stylePackErrorBadConfig',
   badPath: 'stylePackErrorBadPath',
   missingFile: 'stylePackErrorMissingFile',
   badFileType: 'stylePackErrorBadFileType',

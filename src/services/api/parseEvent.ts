@@ -138,9 +138,18 @@ const readBlock = (value: unknown): OutputBlockStart | null => {
         signature: isOptionalString(value.signature) ? value.signature : undefined,
       } as OutputBlockStart
     }
-    case 'tool_use':
-      // 不展示客户端工具内容；交给回复归并层关闭这条回复的续写能力。
-      break
+    case 'tool_use': {
+      // 客户端工具调用：id / name 必填，input 在流里由 input_json_delta 累积（起点可能为空对象）
+      if (!isString(value.id) || !isString(value.name)) {
+        return null
+      }
+      return {
+        type: 'tool_use',
+        id: value.id,
+        name: value.name,
+        input: isRecord(value.input) ? value.input : {},
+      }
+    }
     default:
       return null
   }
@@ -160,6 +169,9 @@ const readDelta = (value: unknown): ContentBlockDelta | null => {
       return isString(value.signature) ? (value as ContentBlockDelta) : null
     case 'citations_delta':
       return isCitation(value.citation) ? (value as ContentBlockDelta) : null
+    case 'input_json_delta':
+      // 客户端工具参数分片；上层按块拼成完整 input JSON
+      return isString(value.partial_json) ? (value as ContentBlockDelta) : null
     default:
       return null
   }

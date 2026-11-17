@@ -121,6 +121,16 @@ export type ServerToolBlock =
 /** 用于识别客户端工具调用的内容块类型 */
 export type ToolUseBlock = { type: 'tool_use'; id: string; name: string; input: unknown }
 
+/** 客户端工具结果块：必须作为 user 消息内容回传，工具循环据此把执行结果回灌给模型 */
+export type ToolResultBlockParam = {
+  type: 'tool_result'
+  tool_use_id: string
+  /** 工具执行结果原文；记忆工具为 runMemoryTool 返回的 JSON 字符串 */
+  content: string
+  /** 结构化错误（ok:false）在各协议映射为 error 标记 */
+  is_error?: boolean
+}
+
 // ---------- 请求 ----------
 
 export type TextBlockParam = { type: 'text'; text: string }
@@ -152,12 +162,13 @@ export type AssistantBlockParam =
   | ServerToolUseBlockParam
   | WebSearchToolResultBlockParam
   | WebFetchToolResultBlockParam
+  | ToolUseBlock
 
 /** 末尾 assistant 自动触发继续生成，无需 prefix 字段 */
 export type MessageParam =
   /** Chat Engine 扩展角色，位于对应 user 前；需服务端支持 latest_reminder。 */
   | { role: 'latest_reminder'; content: string }
-  | { role: 'user'; content: string | (FileBlockParam | TextBlockParam)[] }
+  | { role: 'user'; content: string | (FileBlockParam | TextBlockParam | ToolResultBlockParam)[] }
   | { role: 'assistant'; content: AssistantBlockParam[] }
 
 /** 开启联网搜索与边想边搜 */
@@ -172,12 +183,24 @@ export type DeepseekReadUrlTool = {
   name: 'deepseek_read_url'
 }
 
+/**
+ * 客户端工具定义：Anthropic 兼容端点直接按 Anthropic 形状发送（name / description / input_schema）；
+ * 其它预设由适配层转换成各协议的 tools 结构。
+ */
+export type ClientToolParam = {
+  name: string
+  description: string
+  /** 合法 JSON Schema（对象根）；记忆工具的 schema 来自 MEMORY_TOOLS */
+  input_schema: Record<string, unknown>
+}
+
 export type CreateMessageRequest = {
   model: ChatModel
   system: string
   messages: MessageParam[]
   thinking: { type: 'enabled' | 'disabled' }
-  tools: (DeepseekWebSearchTool | DeepseekReadUrlTool)[]
+  /** 服务端工具（DeepSeek 扩展）与客户端工具可同时存在 */
+  tools: (DeepseekWebSearchTool | DeepseekReadUrlTool | ClientToolParam)[]
   safety_check: { level: 'high' }
   title?: { enabled: boolean }
 }
@@ -197,6 +220,8 @@ export type MessageUsage = {
   output_tokens: number
   /** 仅当 message_delta 中有对外输出的搜索结果块时出现 */
   server_tool_use?: { web_search_requests: number; tool_search: number }
+  /** 推理（思考）消耗的 token，部分协议提供 */
+  reasoning_tokens?: number
 }
 
 /** content_block_start 携带的初始内容块；工具块已是完整内容 */

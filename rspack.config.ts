@@ -71,6 +71,8 @@ export const createConfig = ({
         type: 'javascript/auto',
       },
       { test: /\.(woff2?|ttf)$/, type: 'asset/resource' },
+      // sql.js 的 wasm 作为静态资产输出，import 得到 URL 后交给 locateFile
+      { test: /\.wasm$/, type: 'asset/resource' },
     ],
   },
   plugins: [
