@@ -40,6 +40,10 @@ export const ChatInput = memo(function ChatInput({ sessionId }: { sessionId: str
   return <Input key={sessionId === null ? 'new' : `session:${sessionId}`} sessionId={sessionId} />
 })
 
+/** 只有 iOS Safari 需要拦默认聚焦来避免整页滚动 */
+const IOS_SAFARI =
+  typeof navigator !== 'undefined' && /iP(hone|ad|od)/.test(navigator.userAgent)
+
 const Input = ({ sessionId }: { sessionId: string | null }) => {
   const t = useTranslate()
   const draft = useDrafts((state) => state.drafts.get(sessionId) ?? EMPTY_DRAFT)
@@ -174,8 +178,9 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           value={text}
           onChange={(event) => setText(event.target.value)}
           onMouseDown={(event) => {
-            // 首次点击时手动聚焦，避免 Safari 把整个页面滚到输入框位置。
-            if (isMobile && event.button === 0 && document.activeElement !== event.currentTarget) {
+            // 仅 iOS Safari 需要：拦掉默认聚焦后手动 focus，避免整页被滚动。
+            // Android WebView 保留原生行为，否则部分机型（vivo 等）点输入框不弹键盘、文字进不来。
+            if (IOS_SAFARI && event.button === 0 && document.activeElement !== event.currentTarget) {
               event.preventDefault()
               event.currentTarget.focus({ preventScroll: true })
             }
