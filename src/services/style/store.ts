@@ -75,26 +75,38 @@ const resolveTheme = (
 /** 启用包的全部 objectURL：切换/清除时统一释放 */
 let activeUrls: string[] = []
 
-/** 列表图标单独一组 URL，刷新列表时重建 */
-let summaryIconUrls = new Map<string, string>()
+/** 列表摘要里的 objectURL（包图标与详情页封面）：刷新列表时整组重建并释放旧地址 */
+let summaryUrls: { icons: Map<string, string>; covers: Map<string, string> } = {
+  icons: new Map(),
+  covers: new Map(),
+}
 
 const refreshPacks = async (): Promise<void> => {
   const stored = await listStoredStylePacks()
-  // 先建好新图标 URL 再释放旧的，避免列表在渲染间隙引用已释放的地址
+  // 先建好新 URL 再释放旧的，避免列表在渲染间隙引用已释放的地址
   const nextIcons = new Map<string, string>()
+  const nextCovers = new Map<string, string>()
   const packs = stored.map((pack) => {
     let iconUrl: string | undefined
+    let coverUrl: string | undefined
     if (pack.icon) {
       iconUrl = URL.createObjectURL(pack.icon)
       nextIcons.set(pack.id, iconUrl)
     }
-    return summarize(pack, iconUrl)
+    if (pack.cover) {
+      coverUrl = URL.createObjectURL(pack.cover)
+      nextCovers.set(pack.id, coverUrl)
+    }
+    return summarize(pack, { iconUrl, coverUrl })
   })
-  const previousIcons = summaryIconUrls
-  summaryIconUrls = nextIcons
+  const previous = summaryUrls
+  summaryUrls = { icons: nextIcons, covers: nextCovers }
   packs.sort((a, b) => b.importedAt - a.importedAt)
   set({ packs })
-  for (const url of previousIcons.values()) {
+  for (const url of previous.icons.values()) {
+    URL.revokeObjectURL(url)
+  }
+  for (const url of previous.covers.values()) {
     URL.revokeObjectURL(url)
   }
 }
@@ -135,6 +147,11 @@ export const activateStylePack = async (id: string | null): Promise<void> => {
     iconUrl = URL.createObjectURL(pack.icon)
     created.push(iconUrl)
   }
+  let coverUrl: string | undefined
+  if (pack.cover) {
+    coverUrl = URL.createObjectURL(pack.cover)
+    created.push(coverUrl)
+  }
 
   const previous = activeUrls
   activeUrls = created
@@ -143,6 +160,7 @@ export const activateStylePack = async (id: string | null): Promise<void> => {
     manifest: pack.manifest,
     urls,
     iconUrl,
+    coverUrl,
     license: pack.license,
   }
   set({ activeId: pack.id, active })
@@ -166,6 +184,7 @@ export const importStylePack = async (file: File): Promise<void> => {
       manifest: parsed.manifest,
       assets,
       icon: parsed.icon,
+      cover: parsed.cover,
       license: parsed.license,
       importedAt: Date.now(),
     })

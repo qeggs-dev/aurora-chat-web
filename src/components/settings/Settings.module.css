@@ -565,7 +565,13 @@
   list-style: none;
 }
 
+/*
+ * 卡片表面色：设置弹窗会铺背景图（--dslike-setting-image），透明卡片会直接透出背景，
+ * 看起来像「颜色不对」。用主题底色叠一层半透明表面：亮/暗主题都取 --dsw-alias-bg-base，
+ * 不硬编码颜色，深色主题下也不会变成白块。
+ */
 .stylePackCard {
+  --style-pack-surface: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent);
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -573,12 +579,77 @@
   padding: 12px 14px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
+  background-color: var(--style-pack-surface);
+  transition:
+    background-color var(--ds-transition-duration) var(--ds-ease-in-out),
+    border-color var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+.stylePackCard:hover:not(.stylePackCardActive),
+.stylePackCard:focus-within {
+  background-color: color-mix(
+    in srgb,
+    var(--style-pack-surface) 90%,
+    var(--dsw-alias-interactive-bg-hover) 10%
+  );
 }
 
 .stylePackCardActive {
   border-color: var(--dsw-alias-brand-primary);
-  background-color: var(--dsw-alias-interactive-bg-hover);
+  background-color: color-mix(
+    in srgb,
+    var(--style-pack-surface) 82%,
+    var(--dsw-alias-interactive-bg-hover) 18%
+  );
+}
+
+.stylePackCardActive:hover,
+.stylePackCardActive:focus-within {
+  background-color: color-mix(
+    in srgb,
+    var(--style-pack-surface) 76%,
+    var(--dsw-alias-interactive-bg-hover) 24%
+  );
+}
+
+/* 卡片主体（点击即加载）：视觉上是整卡，语义上是按钮，键盘 Enter / Space 可用 */
+.stylePackMain {
+  display: flex;
+  flex: 1 1 200px;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+}
+
+.stylePackMain:disabled {
+  cursor: default;
+}
+
+.stylePackMain:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill);
+  outline-offset: 2px;
+}
+
+/* 恢复默认样式行：不可点时保持卡片外观，只把右侧动作换成状态徽标 */
+.stylePackRestoreCard {
+  align-items: center;
+}
+
+.stylePackRestoreMain {
+  display: flex;
+  flex: 1 1 160px;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
 }
 
 .stylePackIcon {

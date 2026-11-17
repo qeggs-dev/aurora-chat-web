@@ -69,6 +69,7 @@
   padding: 24px;
   border: 1px dashed var(--dsw-alias-border-l2);
   border-radius: 12px;
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent);
   text-align: center;
 }
 
@@ -457,6 +458,7 @@
   padding: 10px 12px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent);
 }
 
 .memoryHead {
@@ -518,6 +520,7 @@
   padding: 16px;
   border: 1px dashed var(--dsw-alias-border-l2);
   border-radius: 10px;
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent);
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;

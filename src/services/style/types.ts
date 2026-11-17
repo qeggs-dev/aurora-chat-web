@@ -225,12 +225,14 @@ export type StyleManifest = {
   version?: string
   sidebarTitle?: string
   icon?: { file: string }
+  /** 详情页封面（可选）；路径规则与其它资源一致，只用包内文件 */
+  cover?: { file: string }
   license?: { file: string }
   color_palette?: StylePalette
   assets: Record<string, StyleAssetEntry>
 }
 
-/** 设置页列表用的摘要 */
+/** 设置页列表用的摘要；详情页需要的完整清单与许可证也在这里带出，避免再次读 IndexedDB */
 export type StylePackSummary = {
   id: string
   name: string
@@ -238,5 +240,11 @@ export type StylePackSummary = {
   author?: string
   version?: string
   iconUrl?: string
+  /** 封面图的 objectURL；列表刷新时与 iconUrl 一起 revoke */
+  coverUrl?: string
   importedAt: number
+  /** 详情页的完整清单（资源槽位 / 参数 / 调色板 / sidebarTitle） */
+  manifest: StyleManifest
+  /** 许可证全文；文件缺失或不安全时为 undefined */
+  license?: string
 }

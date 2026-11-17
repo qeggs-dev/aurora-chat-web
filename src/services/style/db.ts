@@ -7,6 +7,8 @@ export type StoredStylePack = {
   manifest: StyleManifest
   assets: Record<string, Blob>
   icon?: Blob
+  /** 详情页封面（可选，导入时 ≤5 MB） */
+  cover?: Blob
   license?: string
   importedAt: number
 }
@@ -39,12 +41,18 @@ export const deleteStoredStylePack = async (id: string): Promise<void> => {
   await (await getDB()).delete('packs', id)
 }
 
-export const summarize = (pack: StoredStylePack, iconUrl?: string): StylePackSummary => ({
+export const summarize = (
+  pack: StoredStylePack,
+  urls: { iconUrl?: string; coverUrl?: string } = {}
+): StylePackSummary => ({
   id: pack.id,
   name: pack.manifest.name,
   description: pack.manifest.description,
   author: pack.manifest.author,
   version: pack.manifest.version,
-  iconUrl,
+  iconUrl: urls.iconUrl,
+  coverUrl: urls.coverUrl,
   importedAt: pack.importedAt,
+  manifest: pack.manifest,
+  license: pack.license,
 })

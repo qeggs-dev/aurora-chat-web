@@ -43,8 +43,12 @@ const MAX_ZIP_BYTES = 20 * 1024 * 1024
 const MAX_TOTAL_BYTES = 60 * 1024 * 1024
 const MAX_ENTRIES = 300
 const MAX_LICENSE_BYTES = 200 * 1024
+/** 详情页封面单独限制 5 MB（比普通图片更严，避免列表刷新时生成过大的 objectURL） */
+const MAX_COVER_BYTES = 5 * 1024 * 1024
 
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'avif'])
+/** 封面只接受这五种扩展名（与 README 的 cover 说明一致） */
+const COVER_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'svg'])
 const FONT_EXT = new Set(['ttf', 'otf', 'woff', 'woff2'])
 const TEXT_EXT = new Set(['txt', 'md', 'license'])
 
@@ -244,6 +248,8 @@ export type ParsedStylePack = {
   /** assetId → 文件（已按主题后缀的完整 ID 建键） */
   assets: Record<string, { blob: Blob; alpha: number; exposure: number; kind: 'image' | 'font' }>
   icon?: Blob
+  /** 详情页封面（可选，≤5 MB，png/jpg/jpeg/webp/svg） */
+  cover?: Blob
   license?: string
   ignored: string[]
 }
@@ -306,6 +312,7 @@ const readManifest = (text: string): StyleManifest => {
     version: readOptionalText(record.version, 'version', false),
     sidebarTitle: readSidebarTitle(record.sidebarTitle),
     icon: ref(record.icon, 'icon') ? { file: ref(record.icon, 'icon') as string } : undefined,
+    cover: ref(record.cover, 'cover') ? { file: ref(record.cover, 'cover') as string } : undefined,
     license: ref(record.license, 'license') ? { file: ref(record.license, 'license') as string } : undefined,
     color_palette: colorPalette,
     assets: assets as Record<string, StyleAssetEntry>,
@@ -400,6 +407,23 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
     icon = blobOf(path, MIME[extensionOf(path)])
   }
 
+  let cover: Blob | undefined
+  if (manifest.cover) {
+    const path = normalizeEntryPath(manifest.cover.file)
+    if (!path || !paths.has(path)) {
+      throw new StylePackError('missingFile', manifest.cover.file)
+    }
+    const ext = extensionOf(path)
+    if (!COVER_EXT.has(ext)) {
+      throw new StylePackError('badFileType', manifest.cover.file)
+    }
+    const bytes = paths.get(path) as Uint8Array
+    if (bytes.length > MAX_COVER_BYTES) {
+      throw new StylePackError('badConfig', `cover file exceeds 5 MB: ${manifest.cover.file}`)
+    }
+    cover = blobOf(path, MIME[ext])
+  }
+
   let license: string | undefined
   if (manifest.license) {
     const path = normalizeEntryPath(manifest.license.file)
@@ -417,5 +441,5 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
     }
   }
 
-  return { manifest, assets, icon, license, ignored }
+  return { manifest, assets, icon, cover, license, ignored }
 }

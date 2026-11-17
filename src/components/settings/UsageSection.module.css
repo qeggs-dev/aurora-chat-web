@@ -13,6 +13,8 @@
   padding: 14px 16px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
+  /* 设置弹窗可能铺背景图：卡片给稳定表面色，避免直接透出背景 */
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent);
 }
 
 .cardHeader {
@@ -99,6 +101,7 @@
   padding: 24px;
   border: 1px dashed var(--dsw-alias-border-l2);
   border-radius: 12px;
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 82%, transparent);
   text-align: center;
 }
 

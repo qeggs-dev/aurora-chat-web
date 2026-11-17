@@ -29,6 +29,8 @@ export type ActiveStyle = {
   manifest: StyleManifest
   urls: Record<string, string>
   iconUrl?: string
+  /** 详情页封面 blob URL（与列表 summary 的 coverUrl 各自独立，随启用状态释放） */
+  coverUrl?: string
   license?: string
 }
 
