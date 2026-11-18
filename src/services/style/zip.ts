@@ -807,7 +807,10 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
     throw new StylePackError('notZip')
   }
 
-  const names = Object.keys(entries)
+  // 目录条目没有内容，跳过；只对文件做路径、数量与大小校验
+  const names = Object.keys(entries).filter(
+    (name) => !name.endsWith('/') && !name.endsWith('\\')
+  )
   if (names.length === 0) {
     throw new StylePackError('noIndex')
   }

@@ -9,5 +9,25 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext"
   },
-  "include": ["src/env.d.ts", "src/services/preset/types.ts", "src/services/preset/zip.ts"]
+  "include": [
+    "src/env.d.ts",
+    "src/services/preset/types.ts",
+    "src/services/preset/template.ts",
+    "src/services/preset/zip.ts",
+    "src/services/api/sse.ts",
+    "src/services/api/parseEvent.ts",
+    "src/services/api/client.ts",
+    "src/services/api/providers/normalize.ts",
+    "src/services/api/providers/openai.ts",
+    "src/services/api/providers/anthropic.ts",
+    "src/services/api/providers/responses.ts",
+    "src/services/usage/export.ts",
+    "src/services/usage/store.ts",
+    "src/services/style/types.ts",
+    "src/services/style/zip.ts",
+    "src/services/style/effects.ts",
+    "src/services/chat/compaction.ts",
+    "src/services/memory/schema.ts",
+    "src/services/memory/store.ts"
+  ]
 }

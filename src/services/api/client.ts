@@ -231,7 +231,7 @@ const isDeepseekServerTool = (tool: unknown): boolean =>
  * temperature / top_p / max_tokens / stop_sequences 等原样保留），因此兼容模式下的请求体是默认请求体
  * 去掉私有扩展后的结果。返回新对象，不修改传入的 body。
  */
-const stripDeepseekExtensions = (body: Record<string, unknown>): Record<string, unknown> => {
+export const stripDeepseekExtensions = (body: Record<string, unknown>): Record<string, unknown> => {
   const rest: Record<string, unknown> = { ...body }
   delete rest.safety_check
   delete rest.title
@@ -482,7 +482,7 @@ export const deleteFile = async (apiKey: string, fileId: string): Promise<void> 
  * （默认预设留空的字段不补默认值，请求体与无预设时完全一致），
  * 且只带该协议支持的字段，penalties / seed / topK 等非 Anthropic 字段不发送（避免 400）。
  */
-const presetAnthropicBody = (
+export const presetAnthropicBody = (
   body: CreateMessageRequest,
   preset: ResolvedPreset
 ): Record<string, unknown> => {
@@ -736,7 +736,7 @@ const warnUnsupportedParams = (
  * 不支持的能力只 warn 一次并由适配层降级。
  * compatible 为兼容模式：不生成 reminder 消息，也不带 thinking.effort（thinking.enabled 照旧）。
  */
-const buildCanonicalRequest = (
+export const buildCanonicalRequest = (
   request: CreateMessageRequest,
   preset: ResolvedPreset,
   profile: ProviderProfile,

@@ -167,6 +167,12 @@ export const compileOpenAIChatRequest = (
   if (req.frequencyPenalty !== undefined && capabilities.sampling.penalties) {
     body.frequency_penalty = req.frequencyPenalty
   }
+  if (
+    (req.presencePenalty !== undefined || req.frequencyPenalty !== undefined) &&
+    !capabilities.sampling.penalties
+  ) {
+    warnings.push('Chat Completions 不支持 penalties，已忽略')
+  }
   if (req.seed !== undefined) {
     if (!Number.isSafeInteger(req.seed)) {
       throw providerConfigError('seed 必须是整数')
