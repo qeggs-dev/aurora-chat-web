@@ -117,6 +117,9 @@ export const zh = {
   backupInvalidBranches: '文件中的消息分支已损坏，无法导入',
   backupInvalidFiles: '文件中的附件数据已损坏，无法导入',
   settingsLocalePreference: '语言',
+  settingsCompatibilityMode: '兼容模式（不发送 DeepSeek 私有扩展）',
+  settingsCompatibilityModeDescription:
+    '开启后不发送 safety_check、title、DeepSeek 服务端工具（deepseek_web_search / deepseek_read_url）与 latest_reminder 等 DeepSeek 专属内容；标准采样参数（temperature / top_p / max_tokens / stop / penalties / seed 等）不受影响。',
   settingsTtsVoice: '朗读音色',
   settingsTtsVoiceStella: '海星（女声）',
   settingsTtsVoiceTide: '暗潮（男声）',

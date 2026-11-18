@@ -20,6 +20,7 @@ import { useChatStore } from '../../services/chat/store.js'
 import { regionCodes, getRegionName, provinces } from '../../services/location.js'
 import {
   isChineseBrowser,
+  setCompatibilityMode,
   setLocale,
   setLocation,
   setThemePreference,
@@ -44,7 +45,7 @@ import { UsageIcon, UsageSection } from './UsageSection.js'
 import styles from './Settings.module.css'
 
 /**
- * 设置弹窗：分「通用设置」（主题、语言、朗读音色、位置）、「数据管理」（API Key、导入、导出、删除）、
+ * 设置弹窗：分「通用设置」（主题、语言、兼容模式、朗读音色、位置）、「数据管理」（API Key、导入、导出、删除）、
  * 「用量统计」（请求与 token 统计、最近请求、余额查询、清空统计）、「样式」（导入、启用、删除自定义样式包）、
  * 「Preset」（导入、手写 JSON 编辑、启用、删除 API 配置预设）与「关于」（非官方声明与上游许可）。
  * 桌面端为居中弹窗、左侧导航；移动端为底部弹层、导航横排在内容上方
@@ -164,6 +165,7 @@ const SettingsContent = () => {
             <>
               <ThemeSetting />
               <LocaleSetting />
+              <CompatibilitySetting />
               <TtsVoiceSetting />
               <LocationSetting />
             </>
@@ -361,6 +363,46 @@ const LocaleSetting = () => {
           onChange={setLocale}
         />
       }
+    />
+  )
+}
+
+/** 开关：通用设置里与 Select 并列使用，样式与预设页的开关一致 */
+const Switch = ({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean
+  label: string
+  onChange: (checked: boolean) => void
+}) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    aria-label={label}
+    className={clsx(styles.switch, checked && styles.switchOn)}
+    onClick={() => onChange(!checked)}
+  >
+    <span className={styles.switchThumb} aria-hidden="true" />
+  </button>
+)
+
+/**
+ * 兼容模式：不发送 DeepSeek 私有扩展（safety_check / title / 服务端工具 / latest_reminder /
+ * thinking.effort），标准采样参数不受影响。切换即时写入 localStorage。
+ */
+const CompatibilitySetting = () => {
+  const t = useTranslate()
+  const compatibilityMode = useSettings((state) => state.compatibilityMode)
+  const label = t('settingsCompatibilityMode')
+  return (
+    <SettingCell
+      label={label}
+      description={t('settingsCompatibilityModeDescription')}
+      status={null}
+      action={<Switch checked={compatibilityMode} label={label} onChange={setCompatibilityMode} />}
     />
   )
 }

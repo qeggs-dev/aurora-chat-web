@@ -1,4 +1,5 @@
 import { translate, type TranslationMessage } from '../../i18n/index.js'
+import { useSettings } from '../settings.js'
 import {
   DEFAULT_PRESET_BASE_URL,
   getActiveResolvedPreset,
@@ -203,6 +204,58 @@ const isAnthropicDeepseekPreset = (preset: ResolvedPreset | null): boolean =>
 /** DeepSeek 的 Anthropic 兼容接口在 /anthropic 下；预设只给域名时补全，已带则原样保留 */
 const deepseekCompatBase = (baseUrl: string): string =>
   ANTHROPIC_SEGMENT.test(baseUrl) ? baseUrl : `${baseUrl.replace(/\/+$/, '')}/anthropic`
+
+// ---------- 兼容模式（不发送 DeepSeek 私有扩展） ----------
+
+/**
+ * 兼容模式开关：请求层每次发送前同步读取，不订阅设置变化。
+ * 开启后不发送 safety_check / title / DeepSeek 服务端工具 / latest_reminder 角色 / thinking.effort，
+ * 标准采样参数与消息体结构保持不变；关闭时不做任何处理，请求与改动前完全一致。
+ */
+const isCompatibilityMode = (): boolean => useSettings.getState().compatibilityMode
+
+/** DeepSeek 服务端工具（扩展模式）的类型名：兼容模式下从 tools 里移除 */
+const DEEPSEEK_SERVER_TOOL_TYPES: ReadonlySet<string> = new Set([
+  'deepseek_web_search',
+  'deepseek_read_url',
+])
+
+const isDeepseekServerTool = (tool: unknown): boolean =>
+  typeof tool === 'object' &&
+  tool !== null &&
+  DEEPSEEK_SERVER_TOOL_TYPES.has(String((tool as { type?: unknown }).type))
+
+/**
+ * 兼容模式：从「已构造好的线上请求体」里移除 DeepSeek 私有扩展。
+ * 只删这几个键 / 工具 / 角色，不重排、不改写标准字段（model / messages / system / thinking.type /
+ * temperature / top_p / max_tokens / stop_sequences 等原样保留），因此兼容模式下的请求体是默认请求体
+ * 去掉私有扩展后的结果。返回新对象，不修改传入的 body。
+ */
+const stripDeepseekExtensions = (body: Record<string, unknown>): Record<string, unknown> => {
+  const rest: Record<string, unknown> = { ...body }
+  delete rest.safety_check
+  delete rest.title
+  if (Array.isArray(rest.tools)) {
+    const tools = rest.tools.filter((tool) => !isDeepseekServerTool(tool))
+    if (tools.length > 0) {
+      rest.tools = tools
+    } else {
+      delete rest.tools
+    }
+  }
+  if (Array.isArray(rest.messages)) {
+    rest.messages = rest.messages.filter(
+      (message) => (message as { role?: unknown }).role !== 'latest_reminder'
+    )
+  }
+  if (typeof rest.thinking === 'object' && rest.thinking !== null) {
+    // 保留 thinking.type（由用户的深度思考开关决定），只去掉 DeepSeek 的 thinking.effort
+    const thinking: Record<string, unknown> = { ...(rest.thinking as Record<string, unknown>) }
+    delete thinking.effort
+    rest.thinking = thinking
+  }
+  return rest
+}
 
 const toProfile = (preset: ResolvedPreset, apiKey: string): ProviderProfile => ({
   id: preset.id,
@@ -434,9 +487,10 @@ const presetAnthropicBody = (
   preset: ResolvedPreset
 ): Record<string, unknown> => {
   const { params, overrides } = preset
-  // DeepSeek 兼容端点的硬约束：客户端工具（记忆工具）与 title / safety_check /
-  // 服务端工具同时出现时，请求必须处于 thinking 模式，否则返回
+  // DeepSeek 兼容端点的硬约束：客户端工具（记忆工具）必须与 thinking 同时使用，否则返回
   // "client tools can only be used together with ... in thinking mode"。
+  // 只有客户端工具会触发这条约束；title / safety_check / 服务端工具存在时不强制 thinking。
+  // 兼容模式会移除服务端工具，但客户端工具仍在时该 400 约束依旧成立，故保留这处必需的强制。
   const hasClientTools =
     Array.isArray(body.tools) && body.tools.some((tool) => 'input_schema' in tool)
   const forceThinking = hasClientTools && body.thinking?.type !== 'enabled'
@@ -483,6 +537,8 @@ async function* streamAnthropicCompat(
   const wireBody: Record<string, unknown> = preset
     ? presetAnthropicBody(compatBody, preset)
     : { ...compatBody, stream: true }
+  // 兼容模式：在最终线上请求体上移除 DeepSeek 私有扩展；关闭时 wireBody 原样发送
+  const finalBody = isCompatibilityMode() ? stripDeepseekExtensions(wireBody) : wireBody
   const response = await request(url, {
     method: 'POST',
     headers: {
@@ -490,7 +546,7 @@ async function* streamAnthropicCompat(
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },
-    body: JSON.stringify(wireBody),
+    body: JSON.stringify(finalBody),
     signal,
   })
   const contentType = response.headers.get('Content-Type') ?? ''
@@ -676,11 +732,13 @@ const warnUnsupportedParams = (
 /**
  * CreateMessageRequest（Anthropic 形状）→ CanonicalRequest。
  * 参数一律来自预设；不支持的能力只 warn 一次并由适配层降级。
+ * compatible 为兼容模式：不生成 reminder 消息，也不带 thinking.effort（thinking.enabled 照旧）。
  */
 const buildCanonicalRequest = (
   request: CreateMessageRequest,
   preset: ResolvedPreset,
-  profile: ProviderProfile
+  profile: ProviderProfile,
+  compatible: boolean
 ): CanonicalRequest => {
   const { params } = preset
   const capabilities = resolveCapabilities(profile)
@@ -694,10 +752,15 @@ const buildCanonicalRequest = (
   }))
   const thinkingEnabled = request.thinking?.type === 'enabled'
   const system = request.system?.trim() ? request.system : undefined
+  // 与服务端工具的丢弃方式一致：兼容模式不发送 latest_reminder（DeepSeek 私有角色）
+  const messages = (compatible
+    ? request.messages.filter((message) => message.role !== 'latest_reminder')
+    : request.messages
+  ).map(toCanonicalMessage)
   return {
     model: preset.model,
     ...(system === undefined ? {} : { system }),
-    messages: request.messages.map(toCanonicalMessage),
+    messages,
     ...(clientTools.length > 0
       ? { tools: clientTools, toolChoice: 'auto' as const }
       : {}),
@@ -710,7 +773,7 @@ const buildCanonicalRequest = (
     frequencyPenalty: params.frequency_penalty,
     thinking: {
       enabled: thinkingEnabled,
-      ...(thinkingEnabled && params.reasoning_effort !== null
+      ...(thinkingEnabled && !compatible && params.reasoning_effort !== null
         ? { effort: params.reasoning_effort }
         : {}),
     },
@@ -807,12 +870,16 @@ async function* streamProviderAsEvents(
       `当前预设协议（${preset.protocol}）不支持 Files 附件，已跳过 ${preset.name} 请求里的附件`
     )
   }
-  warnDroppedDeepseekFields(
-    request,
-    preset,
-    request.tools.filter((tool) => !isClientTool(tool)).length
-  )
-  const canonical = buildCanonicalRequest(request, preset, profile)
+  const compatible = isCompatibilityMode()
+  if (!compatible) {
+    // 兼容模式是用户主动要求不发送私有字段，不需要再打降级告警
+    warnDroppedDeepseekFields(
+      request,
+      preset,
+      request.tools.filter((tool) => !isClientTool(tool)).length
+    )
+  }
+  const canonical = buildCanonicalRequest(request, preset, profile, compatible)
   const client = createClient(profile)
   let started = false
   let usage: ProviderUsage | undefined

@@ -7,7 +7,7 @@ export type Locale = 'zh-CN' | 'en-US'
 /** 主题偏好；默认跟随系统 */
 export type ThemePreference = 'light' | 'dark' | 'system'
 
-/** 本机设置，存 localStorage：API Key、语言、主题、位置、朗读音色、深度思考与智能搜索开关、侧边栏收起状态 */
+/** 本机设置，存 localStorage：API Key、语言、主题、位置、朗读音色、深度思考与智能搜索开关、侧边栏收起状态、兼容模式 */
 type Settings = {
   apiKey: string | null
   locale: Locale
@@ -17,6 +17,8 @@ type Settings = {
   thinking: boolean
   search: boolean
   siderCollapsed: boolean
+  /** 兼容模式：不发送 DeepSeek 私有扩展参数（safety_check / title / 服务端工具 / latest_reminder / thinking.effort） */
+  compatibilityMode: boolean
   /** 是否已确认首次使用声明（非官方封装） */
   disclaimerAccepted: boolean
 }
@@ -30,6 +32,7 @@ const KEYS = {
   thinking: 'chat-demo:thinking',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
+  compatibilityMode: 'chat-demo:compatibility-mode',
   disclaimerAccepted: 'chat-demo:disclaimer-accepted',
 } as const
 
@@ -99,6 +102,7 @@ export const useSettings = create<Settings>(() => ({
   thinking: read(KEYS.thinking) === 'true',
   search: read(KEYS.search) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
+  compatibilityMode: read(KEYS.compatibilityMode) === 'true',
   disclaimerAccepted: read(KEYS.disclaimerAccepted) === 'true',
 }))
 
@@ -141,6 +145,12 @@ export const setSearch = (search: boolean) => {
 export const setSiderCollapsed = (siderCollapsed: boolean) => {
   write(KEYS.siderCollapsed, String(siderCollapsed))
   useSettings.setState({ siderCollapsed })
+}
+
+/** 兼容模式：请求层在发送前移除 DeepSeek 私有扩展（详见 api/client.ts） */
+export const setCompatibilityMode = (compatibilityMode: boolean) => {
+  write(KEYS.compatibilityMode, String(compatibilityMode))
+  useSettings.setState({ compatibilityMode })
 }
 
 /** 首次使用确认：只写一次，之后不再弹窗 */

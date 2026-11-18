@@ -124,6 +124,9 @@ export const en = {
   backupInvalidBranches: 'The message branches in this file are corrupted and cannot be imported.',
   backupInvalidFiles: 'The attachment data in this file is corrupted and cannot be imported.',
   settingsLocalePreference: 'Language',
+  settingsCompatibilityMode: 'Compatibility mode (no DeepSeek extensions)',
+  settingsCompatibilityModeDescription:
+    'When enabled, DeepSeek-specific content such as safety_check, title, DeepSeek server tools (deepseek_web_search / deepseek_read_url) and latest_reminder is not sent. Standard sampling parameters (temperature / top_p / max_tokens / stop / penalties / seed, etc.) are unaffected.',
   settingsTtsVoice: 'Read-aloud voice',
   settingsTtsVoiceStella: 'Stella (female)',
   settingsTtsVoiceTide: 'Tide (male)',
