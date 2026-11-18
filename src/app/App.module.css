@@ -6,6 +6,12 @@
   background-color: var(--dsw-alias-bg-base);
 }
 
+/* 编辑模式的顶部工具栏是 fixed：给应用整体留出高度，避免遮住侧边栏标题等顶部控件。 */
+:global(body.style-edit-mode) .frame {
+  box-sizing: border-box;
+  padding-top: var(--style-edit-top, 92px);
+}
+
 .main {
   position: relative;
   display: flex;

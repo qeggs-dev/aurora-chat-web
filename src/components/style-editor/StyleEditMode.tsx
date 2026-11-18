@@ -82,6 +82,25 @@ const clampMenuPosition = (
 
 const StyleEditModeActive = () => {
   const t = useTranslate()
+  // 工具栏是 fixed 覆盖层：把高度写进 CSS 变量，让应用内容整体下移，避免遮住顶部控件。
+  const toolbarRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const toolbar = toolbarRef.current
+    if (!toolbar) {
+      return
+    }
+    const applyHeight = () => {
+      const height = toolbar.getBoundingClientRect().height
+      document.documentElement.style.setProperty('--style-edit-top', `${Math.ceil(height) + 20}px`)
+    }
+    applyHeight()
+    const observer = new ResizeObserver(applyHeight)
+    observer.observe(toolbar)
+    return () => {
+      observer.disconnect()
+      document.documentElement.style.removeProperty('--style-edit-top')
+    }
+  }, [])
   const isMobile = useIsMobile()
   const mode = useStyleEditStore((state) => state.mode)
   const draft = useStyleEditStore((state) => state.draft)
@@ -107,6 +126,25 @@ const StyleEditModeActive = () => {
   } | null>(null)
   const [panelRect, setPanelRect] = useState<PanelRect | null>(null)
 
+  /** 面板空白处也能拖：鼠标从非交互区域按下即可；触屏保留标题栏手柄，避免抢走面板内滚动。 */
+  const onPanelBlankPointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (event.pointerType !== 'mouse' || event.button !== 0) {
+      return
+    }
+    if (event.target instanceof Element && event.target.closest('[data-style-edit-drag-handle]')) {
+      return
+    }
+    if (
+      event.target instanceof Element &&
+      event.target.closest(
+        'input, textarea, select, button, a, label, [contenteditable="true"], [role="button"], [role="tab"], [role="menuitem"]'
+      )
+    ) {
+      return
+    }
+    onPanelDragStart(event)
+  }
+
   const onPanelDragStart = (event: ReactPointerEvent<HTMLDivElement>): void => {
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return
@@ -116,7 +154,8 @@ const StyleEditModeActive = () => {
       return
     }
     const rect = panel.getBoundingClientRect()
-    const titleHeight = event.currentTarget.getBoundingClientRect().height
+    const handle = panel.querySelector<HTMLElement>('[data-style-edit-drag-handle]')
+    const titleHeight = handle?.getBoundingClientRect().height ?? 40
     panelDrag.current = {
       pointerId: event.pointerId,
       offsetX: event.clientX - rect.left,
@@ -519,7 +558,12 @@ const StyleEditModeActive = () => {
 
   return (
     <>
-      <div className={styles.toolbar} role="toolbar" aria-label={t('styleEditPanel')}>
+      <div
+        ref={toolbarRef}
+        className={styles.toolbar}
+        role="toolbar"
+        aria-label={t('styleEditPanel')}
+      >
         <div className={styles.toolbarText}>
           <span className={styles.toolbarTitle}>
             {t(mode === 'edit' ? 'styleEditTitleEdit' : 'styleEditTitleCreate')}
@@ -559,6 +603,10 @@ const StyleEditModeActive = () => {
       {panelOpen ? (
         <aside
           ref={panelRef}
+          onPointerDown={onPanelBlankPointerDown}
+          onPointerMove={panelDragHandlers.onPointerMove}
+          onPointerUp={panelDragHandlers.onPointerUp}
+          onPointerCancel={panelDragHandlers.onPointerCancel}
           className={styles.panel}
           style={
             panelRect

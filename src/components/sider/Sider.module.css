@@ -261,6 +261,12 @@
   z-index: 800;
 }
 
+/* 编辑模式工具栏是 fixed 覆盖层：抽屉整体下移，避免顶部标题被遮住 */
+:global(body.style-edit-mode) .drawer {
+  top: var(--style-edit-top, 92px);
+  bottom: 0;
+}
+
 .drawerMask {
   position: absolute;
   inset: 0;

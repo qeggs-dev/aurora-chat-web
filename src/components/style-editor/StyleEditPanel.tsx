@@ -937,6 +937,9 @@ export const StyleEditPanel = ({
         onPointerCancel={dragHandlers?.onPointerCancel}
         onContextMenu={(event) => event.preventDefault()}
       >
+        <span className={styles.panelGrip} aria-hidden>
+          ⠿
+        </span>
         <span className={styles.panelTitle}>{t('styleEditPanel')}</span>
         <span className={dirty ? styles.panelDirty : styles.panelSaved}>
           {t(dirty ? 'styleEditDirtyBadge' : 'styleEditSavedBadge')}
