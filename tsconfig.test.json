@@ -29,6 +29,8 @@
     "src/services/usage/store.ts",
     "src/services/style/types.ts",
     "src/services/style/zip.ts",
+    "src/services/style/editor.ts",
+    "src/services/style/export.ts",
     "src/services/style/effects.ts",
     "src/services/style/integrity.ts",
     "src/services/style/activation.ts",

@@ -2,6 +2,16 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { StyleManifest, StylePackSummary, ThemedBlobs, ThemedUrls } from './types.js'
 
+/**
+ * 样式包编辑器写入的草稿元信息（导入的包没有该字段）：
+ * `license` 字段存的是拼好的 LICENSE 全文，编辑器再次打开时用这里还原
+ * 「版权声明 / License 文本」两个输入框，避免从全文猜测拆分。
+ */
+export type StoredStylePackEditor = {
+  copyright?: string
+  licenseText?: string
+}
+
 export type StoredStylePack = {
   id: string
   manifest: StyleManifest
@@ -16,6 +26,8 @@ export type StoredStylePack = {
   builtin?: boolean
   /** 内置包版本（安装包内 index.json 的 version），启动时据此判断是否需要升级记录 */
   builtinVersion?: string
+  /** 样式包编辑器的草稿元信息（版权声明 / License 文本）；导入或内置包没有该字段 */
+  editor?: StoredStylePackEditor
 }
 
 interface StyleDB extends DBSchema {

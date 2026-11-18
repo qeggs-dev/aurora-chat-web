@@ -4,6 +4,14 @@
 }
 
 /*
+ * 没有样式包资源时的兜底图标：包一层可被编辑模式识别的标记。
+ * display: contents 不产生盒子，布局与直接渲染 fallback 完全一致。
+ */
+.slotTarget {
+  display: contents;
+}
+
+/*
  * 带 tilt 的图标外层透视容器：尺寸固定为图标尺寸，保持与直接渲染 <img> 一致的布局；
  * pointermove / pointerleave 由 useTilt 挂在容器上，图标本身不拦截点击。
  */

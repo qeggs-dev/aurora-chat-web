@@ -14,6 +14,7 @@ import {
   listStoredStylePacks,
   putStoredStylePack,
   summarize,
+  type StoredStylePack,
 } from './db.js'
 import { parseStylePackZip, StylePackError, type ParsedStylePack } from './zip.js'
 import {
@@ -31,6 +32,12 @@ export type StylePackState = {
   packs: StylePackSummary[]
   activeId: string | null
   active: ActiveStyle | null
+  /**
+   * 样式包编辑模式的临时预览样式：非 null 时 `useStyleAsset` / `useStyleSidebarTitle`
+   * 优先读它（图标、侧边栏标题这些渲染在组件内部、不经过 CSS 变量的资源靠这个实时预览）。
+   * 背景 / 字体 / 配色仍由编辑模式直接调用 applyStyleVars 应用。
+   */
+  preview: ActiveStyle | null
   importing: boolean
   error: string | null
 }
@@ -62,11 +69,16 @@ export const useStylePackStore = create<StylePackState>(() => ({
   packs: [],
   activeId: null,
   active: null,
+  preview: null,
   importing: false,
   error: null,
 }))
 
 const { getState: get, setState: set } = useStylePackStore
+
+/** 编辑模式设置 / 清除临时预览样式（由样式包编辑器调用） */
+export const setStylePreview = (preview: ActiveStyle | null): void =>
+  set({ preview })
 
 const themeQuery =
   typeof window !== 'undefined' && typeof window.matchMedia === 'function'
@@ -140,11 +152,27 @@ const summarySourceUrls = (): Set<string> => {
   return keep
 }
 
-/** 保留「当前启用包 + 列表摘要」仍引用的原图 URL，其余派生图全部 revoke */
+/**
+ * 当前启用包 + 列表摘要 + 编辑预览仍引用的原图 URL，其余派生图全部 revoke。
+ * 编辑模式预览的图标派生图也要保留，否则一侧面板改动就会把图标特效图回收掉。
+ */
 const pruneEffects = (activeUrlsToKeep: Iterable<string>): void => {
   const keep = summarySourceUrls()
   for (const url of activeUrlsToKeep) {
     keep.add(url)
+  }
+  const preview = useStylePackStore.getState().preview
+  if (preview) {
+    for (const url of Object.values(preview.urls)) {
+      keep.add(url)
+    }
+    for (const urls of [preview.iconUrls, preview.coverUrls]) {
+      if (urls) {
+        for (const url of themeUrlValues(urls)) {
+          keep.add(url)
+        }
+      }
+    }
   }
   pruneEffectsCache(keep)
 }
@@ -464,6 +492,19 @@ export const getBuiltinStylePackId = (): string | null =>
   get().packs.find((pack) => pack.builtin === true && pack.broken !== true)?.id ?? null
 
 /**
+ * 写入样式包编辑器保存的记录（新建，或覆盖同 id 的自定义包）：
+ * 复用 `putStoredStylePack` 写库后刷新列表；保存的正是当前启用包时重新激活，
+ * 让编辑后的资源立即生效（激活前会重新读库，不会用到旧 Blob）。
+ */
+export const saveStylePack = async (pack: StoredStylePack): Promise<void> => {
+  await putStoredStylePack(pack)
+  await refreshPacks()
+  if (get().activeId === pack.id) {
+    await activateStylePack(pack.id)
+  }
+}
+
+/**
  * 「恢复默认（极光）」：启用随安装包分发的内置包。
  * 只有内置包不可用（资产缺失 / 解析失败 / 被用户同 id 包覆盖）时才返回 null，
  * 此时 `activateStylePack(null)` 会回到上游默认外观——这是唯一合法的降级路径。
@@ -532,14 +573,23 @@ export const initStylePacks = (): Promise<void> =>
 
 export const useStylePackState = (): StylePackState => useStylePackStore()
 
-/** 当前主题下某个槽位的 objectURL 与清单元数据（图标插值方式等） */
+/** 当前主题下某个槽位的 objectURL 与清单元数据（图标插值方式等）；编辑模式预览优先 */
 export type StyleAssetState = { assetId: string; url: string; meta?: StyleAssetEntry }
 
 export const useStyleAsset = (slot: string): StyleAssetState | undefined => {
   const preference = useSettings((state) => state.themePreference)
   const osTheme = useSyncExternalStore(subscribeOsTheme, getOsTheme)
   const active = useStylePackStore((state) => state.active)
+  const preview = useStylePackStore((state) => state.preview)
   const assetId = slotId(slot, resolveTheme(preference, osTheme))
+  const previewUrl = preview?.urls[assetId]
+  if (previewUrl) {
+    return {
+      assetId,
+      url: previewUrl,
+      meta: preview?.manifest.assets[assetId],
+    }
+  }
   const url = active?.urls[assetId]
   return url ? { assetId, url, meta: active?.manifest.assets[assetId] } : undefined
 }
@@ -549,5 +599,6 @@ export const useStyleAssetUrl = (slot: string): string | undefined => useStyleAs
 
 export const useStyleSidebarTitle = (): string | undefined => {
   const active = useStylePackStore((state) => state.active)
-  return active?.manifest.sidebarTitle
+  const preview = useStylePackStore((state) => state.preview)
+  return preview?.manifest.sidebarTitle ?? active?.manifest.sidebarTitle
 }

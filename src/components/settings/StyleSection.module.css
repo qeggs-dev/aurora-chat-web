@@ -66,6 +66,14 @@
   flex-shrink: 0;
 }
 
+/* 样式页头部操作区：编辑样式 / 新建样式包 / 导入 zip 三个入口并排 */
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .status {
   padding: 8px 12px;
   border-radius: 10px;

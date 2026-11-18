@@ -59,23 +59,26 @@ export class StylePackError extends Error {
   }
 }
 
-const MAX_ZIP_BYTES = 20 * 1024 * 1024
-const MAX_TOTAL_BYTES = 60 * 1024 * 1024
+export const MAX_ZIP_BYTES = 20 * 1024 * 1024
+export const MAX_TOTAL_BYTES = 60 * 1024 * 1024
 /** 单个文件条目解压后的上限：低于总量上限，避免一个超大条目先吃满内存 */
-const MAX_ENTRY_BYTES = 20 * 1024 * 1024
-const MAX_ENTRIES = 300
-const MAX_LICENSE_BYTES = 200 * 1024
+export const MAX_ENTRY_BYTES = 20 * 1024 * 1024
+export const MAX_ENTRIES = 300
+export const MAX_LICENSE_BYTES = 200 * 1024
 /** 详情页封面单独限制 5 MB（比普通图片更严，避免列表刷新时生成过大的 objectURL） */
-const MAX_COVER_BYTES = 5 * 1024 * 1024
+export const MAX_COVER_BYTES = 5 * 1024 * 1024
 
 /**
  * 默认路径的扩展名候选顺序（只影响「没写 file 时按默认位置查找」；
  * 显式 file 仍按下面的扩展名集合校验，顺序无关）。
  */
-const IMAGE_EXT_ORDER = ['png', 'webp', 'jpg', 'jpeg', 'gif', 'svg', 'avif'] as const
+export const IMAGE_EXT_ORDER = ['png', 'webp', 'jpg', 'jpeg', 'gif', 'svg', 'avif'] as const
 /** 封面只接受这五种扩展名（与 README 的 cover 说明一致） */
-const COVER_EXT_ORDER = ['png', 'webp', 'jpg', 'jpeg', 'svg'] as const
-const FONT_EXT_ORDER = ['ttf', 'otf', 'woff', 'woff2'] as const
+export const COVER_EXT_ORDER = ['png', 'webp', 'jpg', 'jpeg', 'svg'] as const
+export const FONT_EXT_ORDER = ['ttf', 'otf', 'woff', 'woff2'] as const
+
+/** 样式包 id 的合法格式（1–64 位 [a-z0-9._-]，首字符是字母或数字）；编辑器与导入共用 */
+export const STYLE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/i
 
 const IMAGE_EXT = new Set<string>(IMAGE_EXT_ORDER)
 const COVER_EXT = new Set<string>(COVER_EXT_ORDER)
@@ -123,6 +126,9 @@ const isCssColor = (value: unknown): value is string =>
     RGB_COLOR.test(value) ||
     HSL_COLOR.test(value) ||
     value.toLowerCase() === 'transparent')
+
+/** 是否为合法的 CSS 颜色（供编辑器与导入共用，避免两份校验规则漂移） */
+export const isStyleCssColor = isCssColor
 
 /** 样式包校验告警（忽略无意义字段等）：项目全局禁 console，这里集中豁免一处 */
 // oxlint-disable-next-line no-console
@@ -473,8 +479,9 @@ const readLicenseInput = (value: unknown): { file?: string } | undefined => {
 /**
  * 纯文本字段（侧边栏标题 / 描述 / 作者 / 版本 / 许可证）拒绝尖括号与控制字符；
  * 多行文本保留 \t \n \r。展示层仍走 React 文本，不做 HTML 解析。
+ * 导出给样式包编辑器复用：编辑器保存前用同一规则拒绝这类文本。
  */
-const isUnsafeText = (value: string, multiline: boolean): boolean => {
+export const isUnsafeStyleText = (value: string, multiline: boolean): boolean => {
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index)
     if (code === 0x3c || code === 0x3e) {
@@ -541,7 +548,7 @@ const readOptionalText = (
   if (typeof value !== 'string' || value.length > 400) {
     throw new StylePackError('badIndex', `${field} must be a string of at most 400 chars`)
   }
-  if (isUnsafeText(value, multiline)) {
+  if (isUnsafeStyleText(value, multiline)) {
     warn(`[style-pack] index.json 的 ${field} 含控制字符或 <、>，已忽略该字段`)
     return undefined
   }
@@ -556,7 +563,7 @@ const readSidebarTitle = (value: unknown): string | undefined => {
   if (typeof value !== 'string' || value.length > 40) {
     throw new StylePackError('badIndex', 'sidebarTitle must be a string of at most 40 chars')
   }
-  if (isUnsafeText(value, false)) {
+  if (isUnsafeStyleText(value, false)) {
     throw new StylePackError('badConfig', 'sidebarTitle contains control characters or < >')
   }
   return value.trim() || undefined
@@ -754,7 +761,7 @@ const readManifestInput = (text: string): StyleManifestInput => {
   if (record.schema !== 1) {
     throw new StylePackError('badIndex', 'schema must be 1')
   }
-  if (typeof record.id !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(record.id)) {
+  if (typeof record.id !== 'string' || !STYLE_ID_PATTERN.test(record.id)) {
     throw new StylePackError('badIndex', 'id must be 1-64 chars of [a-z0-9._-]')
   }
   if (typeof record.name !== 'string' || !record.name.trim() || record.name.length > 80) {
@@ -1097,7 +1104,7 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
     const bytes = paths.get(licensePath) as Uint8Array
     if (bytes.length <= MAX_LICENSE_BYTES) {
       const text = new TextDecoder().decode(bytes)
-      if (isUnsafeText(text, true)) {
+      if (isUnsafeStyleText(text, true)) {
         warn(`[style-pack] ${licensePath} 含控制字符或 <、>，不展示许可证全文`)
       } else {
         license = text

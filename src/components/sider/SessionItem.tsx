@@ -52,6 +52,7 @@ export const SessionItem = memo(function SessionItem({
   return (
     <div
       className={clsx(styles.item, active && styles.active)}
+      data-style-slot={active ? STYLE_SLOTS.bgSelectedSession : STYLE_SLOTS.bgNormalSession}
       onClick={() => {
         selectSession(session.id)
         closeMobileSider()

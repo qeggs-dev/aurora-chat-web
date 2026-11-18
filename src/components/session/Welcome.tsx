@@ -1,4 +1,5 @@
 import { useIsMobile } from '../../app/viewport.js'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { useTranslate } from '../../i18n/index.js'
 import { ChatInput } from '../chatInput/ChatInput.js'
 import { MobileHeader } from './MobileHeader.js'
@@ -9,7 +10,7 @@ export const Welcome = () => {
   const t = useTranslate()
   const isMobile = useIsMobile()
   return (
-    <div className={styles.container}>
+    <div className={styles.container} data-style-slot={STYLE_SLOTS.bgMain}>
       {isMobile ? <MobileHeader /> : null}
       <div className={styles.welcome}>
         <div className={styles.greeting}>{t('welcomeMessageChat250808')}</div>

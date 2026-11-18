@@ -19,6 +19,7 @@ import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
+import { StyleEditMode } from '../components/style-editor/StyleEditMode.js'
 import { DisclaimerGate } from '../components/settings/DisclaimerGate.js'
 import { Toast } from '../components/base/Toast.js'
 import { showToast } from '../components/base/toastState.js'
@@ -230,6 +231,7 @@ export const App = () => {
           <SearchPanel />
         </div>
         <SettingsDialog />
+        <StyleEditMode />
         <DisclaimerGate />
         <Toast />
       </>

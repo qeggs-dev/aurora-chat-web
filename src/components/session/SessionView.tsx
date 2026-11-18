@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { STYLE_SLOTS } from '../../services/style/types.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useTranslate } from '../../i18n/index.js'
 import type { Session } from '../../services/chat/types.js'
@@ -21,7 +22,7 @@ export const SessionView = ({
   const isMobile = useIsMobile()
   const title = session.title || t('untitledChat')
   return (
-    <div className={styles.view}>
+    <div className={styles.view} data-style-slot={STYLE_SLOTS.bgChat}>
       {isMobile ? (
         <MobileHeader title={title} />
       ) : (

@@ -4,6 +4,7 @@ import { useTranslate } from '../../i18n/index.js'
 import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
 import { PackIcon } from '../base/PackIcon.js'
 import { STYLE_SLOTS } from '../../services/style/types.js'
+import { STYLE_EDIT_SIDEBAR_TITLE } from '../style-editor/targets.js'
 import { useStyleSidebarTitle } from '../../services/style/store.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
@@ -54,9 +55,11 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   }, [])
 
   return (
-    <div className={clsx(styles.sider, mobile && styles.mobile)}>
+    <div className={clsx(styles.sider, mobile && styles.mobile)} data-style-slot={STYLE_SLOTS.bgSidebar}>
       <div className={styles.top}>
-        <div className={styles.appName}>{styleTitle ?? t('appName')}</div>
+        <div className={styles.appName} data-style-slot={STYLE_EDIT_SIDEBAR_TITLE}>
+          {styleTitle ?? t('appName')}
+        </div>
         <IconButton
           size="m"
           icon={
@@ -74,6 +77,7 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
       <button
         type="button"
         className={styles.newChat}
+        data-style-slot={STYLE_SLOTS.bgNewSession}
         onClick={() => {
           newChat()
           closeMobileSider()

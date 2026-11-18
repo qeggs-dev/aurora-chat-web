@@ -3,6 +3,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { useTheme } from '../../app/theme.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
 import { useSettings } from '../../services/settings.js'
+import { closeSettings } from './settingsDialogState.js'
 import {
   activateStylePack,
   importStylePack,
@@ -10,6 +11,7 @@ import {
   restoreDefaultStylePack,
   useStylePackState,
 } from '../../services/style/store.js'
+import { openStyleEditor, useStyleEditStore } from '../../services/style/editStore.js'
 import { effectCss, useEffectsImage } from '../../services/style/effects.js'
 import {
   PALETTE_KEYS,
@@ -573,6 +575,7 @@ const StylePackDetailContent = ({
 export const StyleSection = () => {
   const t = useTranslate()
   const { ready, packs, activeId, active, importing, error } = useStylePackState()
+  const openingEditor = useStyleEditStore((state) => state.opening)
   const [importStatus, setImportStatus] = useState<Status>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [restoring, setRestoring] = useState(false)
@@ -581,13 +584,22 @@ export const StyleSection = () => {
   const [deleting, setDeleting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const busy = pendingId !== null || restoring || importing
+  const busy = pendingId !== null || restoring || importing || openingEditor
   const detailPack = detailId === null ? undefined : packs.find((pack) => pack.id === detailId)
   /** 本机内置样式包（记录完整才可用于「恢复默认」；损坏时按不可用处理） */
   const builtinPack = packs.find((pack) => pack.builtin === true)
   const builtinId = builtinPack && builtinPack.broken !== true ? builtinPack.id : null
   /** 当前生效的是「默认样式」：内置包启用中，或没有任何包（应用默认外观） */
   const defaultActive = activeId === null || builtinId === activeId
+
+  /** 进入就地编辑模式：先关闭设置弹窗，让整个界面都能被右键 / 长按编辑 */
+  const startEdit = (mode: 'create' | 'edit') => {
+    if (busy) {
+      return
+    }
+    closeSettings()
+    void openStyleEditor(mode)
+  }
 
   const onPick = async (file: File) => {
     setImportStatus(null)
@@ -673,15 +685,34 @@ export const StyleSection = () => {
               <div className={styles.description}>{t('stylePackSectionDescription')}</div>
               <div className={styles.hint}>{t('stylePackImportHint')}</div>
             </div>
-            <Button
-              variant="outlined"
-              size="m"
-              className={styles.importButton}
-              disabled={importing}
-              onClick={() => fileRef.current?.click()}
-            >
-              {t(importing ? 'stylePackImporting' : 'stylePackImport')}
-            </Button>
+            <div className={styles.headerActions}>
+              <Button
+                variant="primary"
+                size="m"
+                disabled={busy || packs.length === 0}
+                title={packs.length === 0 ? t('stylePackLoading') : undefined}
+                onClick={() => startEdit('edit')}
+              >
+                {t(openingEditor ? 'styleEditOpening' : 'styleEditEntryEdit')}
+              </Button>
+              <Button
+                variant="outlined"
+                size="m"
+                disabled={busy}
+                onClick={() => startEdit('create')}
+              >
+                {t('styleEditEntryCreate')}
+              </Button>
+              <Button
+                variant="outlined"
+                size="m"
+                className={styles.importButton}
+                disabled={importing || openingEditor}
+                onClick={() => fileRef.current?.click()}
+              >
+                {t(importing ? 'stylePackImporting' : 'stylePackImport')}
+              </Button>
+            </div>
             <input
               ref={fileRef}
               type="file"

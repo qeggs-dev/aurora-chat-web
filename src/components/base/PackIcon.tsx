@@ -34,7 +34,13 @@ export const PackIcon = ({
   const tilt = useTilt(effects?.tilt)
 
   if (!asset) {
-    return fallback
+    // 没有样式包资源时也要能就地编辑（例如空白草稿）：包一层 data-style-slot 标记，
+    // 用 display: contents 让它不产生盒模型、不改变原有布局。
+    return (
+      <span className={styles.slotTarget} data-style-slot={slot}>
+        {fallback}
+      </span>
+    )
   }
 
   const scaleTransform = derived.scale > 1.0001 ? `scale(${derived.scale})` : undefined
@@ -48,6 +54,7 @@ export const PackIcon = ({
       width={size}
       height={size}
       alt=""
+      data-style-slot={slot}
       className={clsx(styles.icon, tilt.enabled && styles.tiltImage, className)}
       style={{
         // 不支持的关键字由 CSS 的无效值回退机制落到浏览器默认的 auto
@@ -68,6 +75,7 @@ export const PackIcon = ({
   return (
     <span
       className={styles.tiltFrame}
+      data-style-slot={slot}
       style={{ width: size, height: size, perspective: tilt.frameStyle?.perspective }}
       {...tilt.handlers}
     >

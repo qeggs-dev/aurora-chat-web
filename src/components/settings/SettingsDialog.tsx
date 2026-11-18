@@ -221,7 +221,17 @@ const SettingsContent = () => {
             </button>
           ))}
         </div>
-        <div role="tabpanel" className={styles.content}>
+        <div
+          role="tabpanel"
+          className={styles.content}
+          data-style-slot={
+            section === 'data'
+              ? STYLE_SLOTS.bgSettingDatas
+              : section === 'about'
+                ? STYLE_SLOTS.bgSettingAbout
+                : STYLE_SLOTS.bgSettingGeneric
+          }
+        >
           {section === 'general' ? (
             <>
               <ThemeSetting />

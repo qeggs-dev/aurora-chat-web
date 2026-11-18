@@ -120,8 +120,11 @@ const backgroundPosition = (entry: StyleAssetEntry | undefined): string => {
   return (align && ALIGN_POSITION[align]) || ALIGN_POSITION[STYLE_ALIGN_DEFAULT]
 }
 
-/** 语义色 → 主题别名变量；别名定义在 body 上，所以配色必须写到 body.style 才盖得住 */
-const PALETTE_VARS: Record<PaletteColorKey, string[]> = {
+/**
+ * 语义色 → 主题别名变量；别名定义在 body 上，所以配色必须写到 body.style 才盖得住。
+ * 导出给编辑器「从当前主题取色」读取实际生效的颜色。
+ */
+export const PALETTE_VARS: Record<PaletteColorKey, string[]> = {
   background: ['--dsw-alias-bg-base'],
   surface: [
     '--dsw-alias-bg-layer-2',
