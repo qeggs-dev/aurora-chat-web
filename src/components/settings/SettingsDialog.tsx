@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   IconDarkOutline16,
   IconDataOutline16,
@@ -28,6 +28,8 @@ import {
   type ThemePreference,
 } from '../../services/settings.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
+import logoDark from '../../assets/brand/aurora-512.png'
+import logoLight from '../../assets/brand/aurora-light-512.png'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { PackIcon } from '../base/PackIcon.js'
@@ -685,15 +687,38 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.`
 
+/** 当前实际生效的主题（跟随系统时读取 prefers-color-scheme） */
+const useResolvedTheme = (): 'light' | 'dark' => {
+  const preference = useSettings((state) => state.themePreference)
+  const [osDark, setOsDark] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+  )
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (event: MediaQueryListEvent) => setOsDark(event.matches)
+    query.addEventListener('change', handler)
+    return () => query.removeEventListener('change', handler)
+  }, [])
+  return preference === 'system' ? (osDark ? 'dark' : 'light') : preference
+}
+
 const appVersion = () =>
   document.querySelector('meta[name="application-version"]')?.getAttribute('content') ?? ''
 
 const AboutSection = () => {
   const t = useTranslate()
   const version = appVersion()
+  const theme = useResolvedTheme()
   return (
     <div className={styles.about}>
       <div className={styles.aboutHeader}>
+        <img
+          className={styles.aboutLogo}
+          src={theme === 'dark' ? logoDark : logoLight}
+          alt=""
+          width={44}
+          height={44}
+        />
         <span className={styles.aboutName}>{t('appName')}</span>
         <span className={styles.aboutBadge}>{t('aboutBadge')}</span>
         {version ? (

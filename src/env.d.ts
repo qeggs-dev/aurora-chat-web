@@ -15,6 +15,11 @@ declare module 'prismjs/components/*' {}
 declare module 'katex/contrib/mhchem' {}
 
 /** 经 rspack `asset/resource` 输出的 wasm 资产，import 得到的是可 fetch 的 URL */
+declare module '*.png' {
+  const url: string
+  export default url
+}
+
 declare module '*.wasm' {
   const url: string
   export default url

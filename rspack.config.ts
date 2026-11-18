@@ -71,6 +71,7 @@ export const createConfig = ({
         type: 'javascript/auto',
       },
       { test: /\.(woff2?|ttf)$/, type: 'asset/resource' },
+      { test: /\.(png|jpe?g|webp|gif|svg|avif)$/, type: 'asset/resource' },
       // sql.js 的 wasm 作为静态资产输出，import 得到 URL 后交给 locateFile
       { test: /\.wasm$/, type: 'asset/resource' },
       // 内置样式包 zip：作为静态资产输出，import 得到 URL 后 fetch → Blob → File 解析
