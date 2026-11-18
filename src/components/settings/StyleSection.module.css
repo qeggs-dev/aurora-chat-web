@@ -558,6 +558,117 @@
   padding: 4px 2px 0;
 }
 
+/* ===== 详情页「图像效果 / 滤镜」：按资源分组的只读折叠列表 ===== */
+.detailEffects {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.effectList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.effectItem {
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l2) 55%, transparent);
+  border-radius: 10px;
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 44%, transparent);
+}
+
+.effectSummary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 12px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.effectSummary::-webkit-details-marker {
+  display: none;
+}
+
+.effectSummary::before {
+  content: '▸';
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+  transition: transform 120ms ease;
+}
+
+.effectItem[open] > .effectSummary::before {
+  transform: rotate(90deg);
+}
+
+.effectSummary:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill);
+  outline-offset: -2px;
+  border-radius: 10px;
+}
+
+.effectResourceName {
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-markdown-code);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.effectChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.effectChip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-markdown-code);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.effectValues {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px 8px 28px;
+}
+
+.effectValueRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+}
+
+.effectValueGroup {
+  flex: 0 0 88px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-markdown-code);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.effectValueFields {
+  flex: 1 1 160px;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-markdown-code);
+  font-size: 11px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
 @media not all and (min-width: 768px) {
   .header {
     flex-direction: column;

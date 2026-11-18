@@ -13,6 +13,7 @@ import {
 } from '../../services/style/store.js'
 import { openStyleEditor, useStyleEditStore } from '../../services/style/editStore.js'
 import { effectCss, useEffectsImage } from '../../services/style/effects.js'
+import { styleAssetLabel } from '../../services/style/effectSummary.js'
 import {
   PALETTE_KEYS,
   STYLE_PREFIX,
@@ -32,6 +33,7 @@ import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import settingsStyles from './Settings.module.css'
 import styles from './StyleSection.module.css'
+import { StylePackEffects } from './StylePackEffects.js'
 
 /** 样式分组的调色板图标：与设置弹窗里的 InfoIcon 一样用 16px 内联 SVG */
 export const StyleIcon = () => (
@@ -110,7 +112,9 @@ const StylePackIcon = ({
 }) => {
   const theme = useTheme()
   const picked = pickThemedUrl(pack.iconUrls, theme)
-  const effects = picked ? resolveStyleFileRef(pack.manifest.icon, picked.theme)?.effects : undefined
+  const effects = picked
+    ? resolveStyleFileRef(pack.manifest.icon, picked.theme)?.effects
+    : undefined
   const tone = effectCss(effects)
   const derived = useEffectsImage(
     picked?.url,
@@ -138,10 +142,7 @@ const StylePackIcon = ({
   )
 }
 
-/** 资源 ID → 展示名：去掉统一前缀与主题后缀，如 `background.main`、`icon.send`、`font` */
-const assetLabel = (assetId: string): string =>
-  assetId.replace(`${STYLE_PREFIX}.`, '').replace(/\.(light|dark)$/, '')
-
+/** 是否按背景 / 图标 / 字体资源分组（详情页资源清单用） */
 const isBackgroundAsset = (assetId: string): boolean =>
   assetId.startsWith(`${STYLE_PREFIX}.background.`)
 const isIconAsset = (assetId: string): boolean => assetId.startsWith(`${STYLE_PREFIX}.icon.`)
@@ -364,7 +365,7 @@ const StylePackDetailContent = ({
                   {t('stylePackDetailSlotCount', { count: backgrounds.length })}
                 </span>
                 <DetailChips
-                  items={backgrounds.map((asset) => assetLabel(asset.id))}
+                  items={backgrounds.map((asset) => styleAssetLabel(asset.id))}
                   empty={t('stylePackDetailNotProvided')}
                 />
               </div>
@@ -374,7 +375,7 @@ const StylePackDetailContent = ({
                   {t('stylePackDetailSlotCount', { count: icons.length })}
                 </span>
                 <DetailChips
-                  items={icons.map((asset) => assetLabel(asset.id))}
+                  items={icons.map((asset) => styleAssetLabel(asset.id))}
                   empty={t('stylePackDetailNotProvided')}
                 />
               </div>
@@ -429,7 +430,7 @@ const StylePackDetailContent = ({
             return backgrounds.map((asset) => (
               <div key={asset.id} className={styles.detailParamCard}>
                 <div className={styles.detailParamTitle}>
-                  {assetLabel(asset.id)}
+                  {styleAssetLabel(asset.id)}
                   <span className={styles.detailParamTheme}>{t(label)}</span>
                 </div>
                 <div className={styles.detailParamGrid}>
@@ -492,6 +493,13 @@ const StylePackDetailContent = ({
       </DetailSection>
 
       <DetailSection
+        title={t('stylePackDetailEffectsSection')}
+        hint={t('stylePackDetailEffectsHint')}
+      >
+        <StylePackEffects manifest={manifest} />
+      </DetailSection>
+
+      <DetailSection
         title={t('stylePackDetailPaletteSection')}
         hint={t('stylePackDetailPaletteHint')}
       >
@@ -541,12 +549,7 @@ const StylePackDetailContent = ({
         ) : isActive ? (
           <span className={settingsStyles.stylePackBadge}>{t('stylePackInUse')}</span>
         ) : (
-          <Button
-            variant="outlined"
-            size="m"
-            disabled={busy}
-            onClick={onLoad}
-          >
+          <Button variant="outlined" size="m" disabled={busy} onClick={onLoad}>
             {t(pending ? 'stylePackLoadingPack' : 'stylePackLoad')}
           </Button>
         )}
@@ -843,10 +846,7 @@ export const StyleSection = () => {
                           <span className={settingsStyles.stylePackName}>{pack.name}</span>
                           {pack.builtin ? (
                             <span
-                              className={clsx(
-                                settingsStyles.stylePackBadge,
-                                styles.builtinBadge
-                              )}
+                              className={clsx(settingsStyles.stylePackBadge, styles.builtinBadge)}
                             >
                               {t('stylePackBuiltinBadge')}
                             </span>

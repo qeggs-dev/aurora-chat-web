@@ -394,6 +394,9 @@ export const STYLE_EFFECT_KEYS = [
   'tilt',
 ] as const
 
+/** effects 组键：opacity / shadow / window / zoom / tilt 等 */
+export type StyleEffectsKey = (typeof STYLE_EFFECT_KEYS)[number]
+
 /**
  * 特效字段缺省值：字段对象存在但没写某个子字段时用这里的值。
  * 例：`outerGlow: {}` 等价于 radius 10 / 白色 / 强度 1。

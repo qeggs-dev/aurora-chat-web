@@ -23,6 +23,14 @@ import type { Theme } from './types.js'
 
 export type StyleEditEntryMode = 'create' | 'edit'
 
+/**
+ * 悬浮面板当前视图：
+ * - `controls`：当前选中控件的即时编辑（上传 / 排版 / effects / 清除）+ 控件选择列表；
+ * - `metadata`：包级数据（基本信息 / 主题 / 字体 / 配色 / 包图标与封面 / 包级 effects）。
+ * 打开控件菜单（右键 / 长按）或点击控件列表时自动切回 `controls`。
+ */
+export type StyleEditPanelView = 'controls' | 'metadata'
+
 export type StyleEditState = {
   open: boolean
   /** 正在准备草稿（读取 IndexedDB / 内置包） */
@@ -37,6 +45,8 @@ export type StyleEditState = {
   importedAt?: number
   /** 当前选中的控件槽位（点「修改此控件样式」后设置） */
   selectedSlot: string | null
+  /** 悬浮面板当前显示控件编辑还是元数据编辑 */
+  panelView: StyleEditPanelView
   issues: StyleDraftIssue[]
   saving: boolean
   exporting: boolean
@@ -53,6 +63,7 @@ const initialState: StyleEditState = {
   sourcePackId: null,
   importedAt: undefined,
   selectedSlot: null,
+  panelView: 'controls',
   issues: [],
   saving: false,
   exporting: false,
@@ -127,6 +138,7 @@ export const openStyleEditor = async (mode: StyleEditEntryMode): Promise<void> =
       sourcePackId,
       importedAt,
       selectedSlot: null,
+      panelView: 'controls',
       issues: [],
       saving: false,
       exporting: false,
@@ -164,9 +176,15 @@ export const updateStyleDraft = (
   set({ draft: mutator(state.draft), issues: [] })
 }
 
-/** 选中要修改的控件槽位（null = 回到「全部设置」） */
+/** 选中要修改的控件槽位（null = 回到「未选中」，此时面板显示控件选择列表） */
 export const selectStyleEditSlot = (slot: string | null): void => {
-  set({ selectedSlot: slot })
+  // 从控件菜单 / 控件列表进入时总是回到控件编辑视图，避免停留在元数据界面
+  set({ selectedSlot: slot, panelView: 'controls' })
+}
+
+/** 切换悬浮面板视图：控件编辑 ↔ 包级元数据编辑 */
+export const setStyleEditPanelView = (view: StyleEditPanelView): void => {
+  set({ panelView: view })
 }
 
 /**

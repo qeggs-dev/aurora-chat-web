@@ -132,9 +132,18 @@
 }
 
 .panelTitle {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 14px;
   line-height: 22px;
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* 标题栏右侧的「编辑元数据 / 返回控件编辑」按钮：不参与拖动 */
+.panelModeButton {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .panelDirty,
@@ -160,6 +169,128 @@
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
+}
+
+/* 未选中控件时的提示（控件编辑视图） */
+.panelPlaceholder {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+/* ===== 控件选择列表（背景 10 / 图标 40 / 其他）：被遮挡控件的兜底入口 ===== */
+.controlPicker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 86%, transparent);
+}
+
+.controlPickerSummary {
+  border-radius: 6px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.controlPickerSummary:focus-visible,
+.controlGroupSummary:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+.controlPickerHint {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.controlGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.controlGroupSummary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.controlCount {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-markdown-code);
+  font-size: 11px;
+}
+
+.controlGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 6px;
+}
+
+.controlChip {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  line-height: 17px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.controlChip:hover,
+.controlChip:focus-visible {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  outline: none;
+}
+
+.controlChipActive,
+.controlChipActive:hover {
+  border-color: var(--dsw-alias-brand-primary);
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-brand-text);
+}
+
+/* ===== 元数据编辑视图 ===== */
+.metadata {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.metadataHint {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 
 .section {
@@ -600,6 +731,11 @@
     bottom: 8px;
     width: auto;
     max-height: 52vh;
+  }
+
+  /* 元数据表单比控件编辑长得多：窄屏底部抽屉给更高，表单在面板内部滚动 */
+  .panelMetadata {
+    max-height: 72vh;
   }
 
   .effectFields,

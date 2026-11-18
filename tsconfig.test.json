@@ -32,6 +32,7 @@
     "src/services/style/editor.ts",
     "src/services/style/export.ts",
     "src/services/style/effects.ts",
+    "src/services/style/effectSummary.ts",
     "src/services/style/integrity.ts",
     "src/services/style/activation.ts",
     "src/components/settings/presetStatus.ts",

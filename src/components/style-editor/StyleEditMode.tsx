@@ -1,5 +1,5 @@
+import clsx from 'clsx'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { useIsMobile } from '../../app/viewport.js'
 import { useTranslate } from '../../i18n/index.js'
 import { useSettings } from '../../services/settings.js'
 import { applyStyleVars, type ActiveStyle } from '../../services/style/apply.js'
@@ -8,6 +8,7 @@ import {
   exportStyleEditDraft,
   saveStyleEditDraft,
   selectStyleEditSlot,
+  setStyleEditPanelView,
   styleEditIsDirty,
   useStyleEditStore,
 } from '../../services/style/editStore.js'
@@ -20,11 +21,11 @@ import { showToast } from '../base/toastState.js'
 import settingsStyles from '../settings/Settings.module.css'
 import { StyleEditPanel, type StyleEditPanelDragHandlers } from './StyleEditPanel.js'
 import { clampPanelPosition } from './panelPosition.js'
+import { useStyleSlotLabel } from './slotLabels.js'
 import {
   detectPlatform,
   findStyleEditTarget,
   getStyleLongPressAction,
-  styleEditTargetLabel,
   styleEditTargetOf,
   type StyleLongPressAction,
 } from './targets.js'
@@ -69,9 +70,7 @@ const resolveThemeNow = (): Theme => {
 }
 
 /** 菜单定位：夹在视口内，避免贴边被裁掉 */
-const clampMenuPosition = (
-  state: StyleEditMenuState
-): { left: number; top: number } => {
+const clampMenuPosition = (state: StyleEditMenuState): { left: number; top: number } => {
   const width = 240
   const height = state.longPress ? 104 : 60
   return {
@@ -101,13 +100,16 @@ const StyleEditModeActive = () => {
       document.documentElement.style.removeProperty('--style-edit-top')
     }
   }, [])
-  const isMobile = useIsMobile()
   const mode = useStyleEditStore((state) => state.mode)
   const draft = useStyleEditStore((state) => state.draft)
   const issues = useStyleEditStore((state) => state.issues)
   const saving = useStyleEditStore((state) => state.saving)
   const exporting = useStyleEditStore((state) => state.exporting)
-  const [panelOpen, setPanelOpen] = useState(() => !isMobile)
+  const panelView = useStyleEditStore((state) => state.panelView)
+  const slotLabel = useStyleSlotLabel()
+  // 进入编辑模式时面板默认关闭：只保留顶部工具栏，界面上的控件（含输入框右下角的发送按钮）
+  // 不被面板遮挡，都能直接右键 / 长按编辑；点「显示面板」或从控件菜单进入时再打开。
+  const [panelOpen, setPanelOpen] = useState(false)
   const [menu, setMenu] = useState<StyleEditMenuState | null>(null)
   const [exitOpen, setExitOpen] = useState(false)
 
@@ -574,6 +576,18 @@ const StyleEditModeActive = () => {
           <Button
             variant="outlined"
             size="m"
+            data-style-edit-metadata-open
+            onClick={() => {
+              // 面板可能还没打开：同时打开面板并切到元数据视图
+              setStyleEditPanelView('metadata')
+              setPanelOpen(true)
+            }}
+          >
+            {t('styleEditMetadataOpen')}
+          </Button>
+          <Button
+            variant="outlined"
+            size="m"
             aria-expanded={panelOpen}
             onClick={() => setPanelOpen((value) => !value)}
           >
@@ -607,7 +621,7 @@ const StyleEditModeActive = () => {
           onPointerMove={panelDragHandlers.onPointerMove}
           onPointerUp={panelDragHandlers.onPointerUp}
           onPointerCancel={panelDragHandlers.onPointerCancel}
-          className={styles.panel}
+          className={clsx(styles.panel, panelView === 'metadata' && styles.panelMetadata)}
           style={
             panelRect
               ? {
@@ -633,7 +647,7 @@ const StyleEditModeActive = () => {
           role="menu"
           data-style-edit-menu
         >
-          <div className={styles.menuTitle}>{styleEditTargetLabel(menu.target)}</div>
+          <div className={styles.menuTitle}>{slotLabel(menu.target)}</div>
           {longPress ? (
             <button
               type="button"
