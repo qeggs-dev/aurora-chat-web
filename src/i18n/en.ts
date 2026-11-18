@@ -648,4 +648,10 @@ export const en = {
   usageExportDone: 'Usage data exported',
   usageExportUnsupported: 'Export is not supported on mobile yet. Please export on desktop.',
   usageExportFailed: 'Export failed. Please try again.',
+  replyEdit: 'Edit reply',
+  replyEditSave: 'Save',
+  replyEditCancel: 'Cancel',
+  replyEditEdited: 'Edited',
+  replyEditFailed: 'Could not save the edit. Please try again.',
+  replyEditEmpty: 'Content cannot be empty',
 } satisfies Record<keyof typeof zh, string>

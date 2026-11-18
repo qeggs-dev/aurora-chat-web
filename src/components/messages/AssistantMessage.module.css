@@ -109,6 +109,20 @@
   margin-left: auto;
 }
 
+.editedBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  margin-top: 2px;
+  padding: 0 8px;
+  border-radius: 100px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-dimmed);
+  background-color: var(--dsw-alias-bg-layer-2);
+  user-select: none;
+}
+
 .summary {
   display: flex;
   align-items: center;

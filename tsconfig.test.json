@@ -47,6 +47,7 @@
     "src/services/chat/draftFiles.ts",
     "src/services/chat/usageTotals.ts",
     "src/services/chat/reply.ts",
+    "src/services/chat/replyEdit.ts",
     "src/services/chat/describe.ts",
     "src/services/chat/view.ts",
     "src/services/chat/db.ts",

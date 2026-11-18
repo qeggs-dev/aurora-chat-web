@@ -2,11 +2,12 @@ import { useTranslate } from '../../i18n/index.js'
 import { PackIcon } from '../base/PackIcon.js'
 import { STYLE_SLOTS } from '../../services/style/types.js'
 import clsx from 'clsx'
-import { memo } from 'react'
-import { IconRefreshOutline16, IconWarningOutline16 } from '../base/icons.js'
+import { memo, useState } from 'react'
+import { IconEditOutline16, IconRefreshOutline16, IconWarningOutline16 } from '../base/icons.js'
 import { describeReply } from '../../services/chat/describe.js'
 import { canContinueReply } from '../../services/chat/reply.js'
-import { continueReply, regenerateReply } from '../../services/chat/store.js'
+import { canEditReply } from '../../services/chat/replyEdit.js'
+import { continueReply, editReply, regenerateReply } from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { AssistantMessage as AssistantMessageType } from '../../services/chat/types.js'
 import { openSettings } from '../settings/settingsDialogState.js'
@@ -18,6 +19,7 @@ import { toggleSearchPanel, useSearchPanel } from '../search/searchPanelState.js
 import { ReadAloudButton } from './ReadAloudButton.js'
 import { CopyButton } from './CopyButton.js'
 import { ReplyArea } from './ReplyArea.js'
+import { ReplyEditor } from './ReplyEditor.js'
 import { useReplyView } from './useReplyView.js'
 import {
   BranchSwitcher,
@@ -57,6 +59,9 @@ export const AssistantMessage = memo(function AssistantMessage({
     .join('\n\n')
   const copyText = responseText || notice?.text
   const waiting = streaming && view.steps.length === 0 && !view.answer && !message.thinking
+  // 只允许编辑已结束、非流式、且有回答正文的回复；编辑态下隐藏常规操作栏。
+  const [editing, setEditing] = useState(false)
+  const editable = !streaming && !busy && canEditReply(message, false) && !!answer
   const summaryEntry = `${message.id}-summary`
   return (
     <div className={styles.message}>
@@ -68,7 +73,19 @@ export const AssistantMessage = memo(function AssistantMessage({
           hasResponse={!!responseText}
         />
       )}
-      {answer ? (
+      {editing && answer ? (
+        <ReplyEditor
+          initial={answer.markdown}
+          onCancel={() => setEditing(false)}
+          onSave={async (content) => {
+            const saved = await editReply(sessionId, message.id, content)
+            if (saved) {
+              setEditing(false)
+            }
+            return saved
+          }}
+        />
+      ) : answer ? (
         <Markdown
           className="ds-assistant-message-main-content"
           content={answer.markdown}
@@ -77,6 +94,9 @@ export const AssistantMessage = memo(function AssistantMessage({
           disableLink={false}
           sources={view.sources}
         />
+      ) : null}
+      {message.edited && !streaming && !editing ? (
+        <div className={styles.editedBadge}>{t('replyEditEdited')}</div>
       ) : null}
       {waiting ? (
         <div className={styles.waiting}>
@@ -140,13 +160,31 @@ export const AssistantMessage = memo(function AssistantMessage({
           </span>
         </div>
       ) : null}
-      {streaming ? null : (
+      {streaming || editing ? null : (
         <div className={styles.bottom}>
           <BranchSwitcher versions={versions} disabled={busy} onSelect={onSelectVersion} />
           <div className={clsx(styles.actions, isLast && styles.alwaysShow)}>
             {copyText ? <CopyButton text={copyText} /> : null}
             {responseText && !refused ? (
               <ReadAloudButton messageId={message.id} text={responseText} />
+            ) : null}
+            {editable ? (
+              <IconButton
+                icon={
+                  <PackIcon
+                    slot={STYLE_SLOTS.iconEdit}
+                    size={16}
+                    fallback={<IconEditOutline16 />}
+                  />
+                }
+                tooltip={t('replyEdit')}
+                tooltipPlacement="bottom"
+                disabled={busy}
+                onClick={() => {
+                  stopReadAloud()
+                  setEditing(true)
+                }}
+              />
             ) : null}
             <IconButton
               icon={<PackIcon slot={STYLE_SLOTS.iconRegen} fallback={<IconRefreshOutline16 />} />}

@@ -605,4 +605,10 @@ export const zh = {
   usageExportDone: '用量数据已导出',
   usageExportUnsupported: '移动端暂不支持导出，请在桌面端导出',
   usageExportFailed: '导出失败，请重试',
+  replyEdit: '编辑回复',
+  replyEditSave: '保存',
+  replyEditCancel: '取消',
+  replyEditEdited: '已编辑',
+  replyEditFailed: '编辑失败，请重试',
+  replyEditEmpty: '内容不能为空',
 } as const

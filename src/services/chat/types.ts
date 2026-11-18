@@ -131,6 +131,8 @@ export type AssistantMessage = MessageBranch & {
   stopDetails?: StopDetails
   /** 最近一次请求的用量，续写后更新 */
   usage?: MessageUsage
+  /** 回答正文被就地编辑过（旧数据没有该字段，缺省视为未编辑）。 */
+  edited?: boolean
   error?: {
     /** upload：发送前补传附件失败，请求没有发出 */
     kind: ApiErrorKind | 'upload'

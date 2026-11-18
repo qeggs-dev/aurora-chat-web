@@ -36,6 +36,7 @@ import {
   toRequestMessages,
   toToolContinuationMessages,
 } from './reply.js'
+import { editReplyInSession } from './replyEdit.js'
 import {
   createChatChannel,
   nextRevision,
@@ -229,6 +230,18 @@ const trimSessionCache = () => {
   }
 }
 
+/** 把一份新的会话快照写回缓存与列表摘要；revision 由调用方负责推进 */
+const commitSession = (state: ChatState, previous: Session, session: Session) => ({
+  sessionCache: { ...state.sessionCache, [session.id]: session },
+  sessions: sameSummary(previous, session)
+    ? state.sessions
+    : sortSessions(
+        state.sessions.map((summary) =>
+          summary.id === session.id ? toSessionSummary(session) : summary
+        )
+      ),
+})
+
 const updateSession = (id: string, update: (session: Session) => Session) =>
   set((state) => {
     const previous = Object.hasOwn(state.sessionCache, id) ? state.sessionCache[id] : undefined
@@ -241,16 +254,7 @@ const updateSession = (id: string, update: (session: Session) => Session) =>
     }
     // 每次真实更新都推进 revision：多窗口保存时用它判断谁的数据更新
     const session = { ...updated, revision: nextRevision(previous.revision) }
-    return {
-      sessionCache: { ...state.sessionCache, [id]: session },
-      sessions: sameSummary(previous, session)
-        ? state.sessions
-        : sortSessions(
-            state.sessions.map((summary) =>
-              summary.id === id ? toSessionSummary(session) : summary
-            )
-          ),
-    }
+    return commitSession(state, previous, session)
   })
 
 const updateReply = (sessionId: string, reply: AssistantMessage) =>
@@ -354,55 +358,59 @@ const broadcastSessionChange = (sessionId: string, revision: number) => {
   chatChannel?.post({ type: 'session-changed', sessionId, revision })
 }
 
-const persist = (sessionId: string) => {
+/** 保存会话；返回是否成功写入（stale 或存储失败时为 false，供编辑类操作提示用户） */
+const persist = (sessionId: string): Promise<boolean> => {
   const session = getSession(sessionId)
-  if (session) {
-    unsavedSessions.add(sessionId)
-    if (deletingSessions.has(sessionId)) {
-      return
-    }
-    const epoch = historyEpoch
-    const files = pendingFiles.get(sessionId)
-    void db
-      .saveSession(session, files)
-      .then((result) => {
-        if (epoch !== historyEpoch || !getSession(sessionId)) {
-          return
-        }
-        if (pendingFiles.get(sessionId) === files) {
-          pendingFiles.delete(sessionId)
-        }
-        if (result.stale) {
-          // 其他窗口已写入更新的修订：放弃这次写入，清除保存失败提示并重载存储里的数据。
-          unsavedSessions.delete(sessionId)
-          set((state) => ({
-            sessionSaveErrors: Object.fromEntries(
-              Object.entries(state.sessionSaveErrors).filter(([id]) => id !== sessionId)
-            ),
-          }))
-          void reloadSessionFromStorage(sessionId)
-          return
-        }
-        broadcastSessionChange(sessionId, session.revision)
-        if (getSession(sessionId) === session) {
-          unsavedSessions.delete(sessionId)
-          set((state) => ({
-            sessionSaveErrors: Object.fromEntries(
-              Object.entries(state.sessionSaveErrors).filter(([id]) => id !== sessionId)
-            ),
-          }))
-          trimSessionCache()
-        }
-      })
-      .catch((error: unknown) => {
-        db.reportStorageError('save session')(error)
-        if (epoch === historyEpoch && getSession(sessionId)) {
-          set((state) => ({
-            sessionSaveErrors: { ...state.sessionSaveErrors, [sessionId]: true },
-          }))
-        }
-      })
+  if (!session) {
+    return Promise.resolve(false)
   }
+  unsavedSessions.add(sessionId)
+  if (deletingSessions.has(sessionId)) {
+    return Promise.resolve(false)
+  }
+  const epoch = historyEpoch
+  const files = pendingFiles.get(sessionId)
+  return db
+    .saveSession(session, files)
+    .then((result) => {
+      if (epoch !== historyEpoch || !getSession(sessionId)) {
+        return false
+      }
+      if (pendingFiles.get(sessionId) === files) {
+        pendingFiles.delete(sessionId)
+      }
+      if (result.stale) {
+        // 其他窗口已写入更新的修订：放弃这次写入，清除保存失败提示并重载存储里的数据。
+        unsavedSessions.delete(sessionId)
+        set((state) => ({
+          sessionSaveErrors: Object.fromEntries(
+            Object.entries(state.sessionSaveErrors).filter(([id]) => id !== sessionId)
+          ),
+        }))
+        void reloadSessionFromStorage(sessionId)
+        return false
+      }
+      broadcastSessionChange(sessionId, session.revision)
+      if (getSession(sessionId) === session) {
+        unsavedSessions.delete(sessionId)
+        set((state) => ({
+          sessionSaveErrors: Object.fromEntries(
+            Object.entries(state.sessionSaveErrors).filter(([id]) => id !== sessionId)
+          ),
+        }))
+        trimSessionCache()
+      }
+      return true
+    })
+    .catch((error: unknown) => {
+      db.reportStorageError('save session')(error)
+      if (epoch === historyEpoch && getSession(sessionId)) {
+        set((state) => ({
+          sessionSaveErrors: { ...state.sessionSaveErrors, [sessionId]: true },
+        }))
+      }
+      return false
+    })
 }
 
 export const retrySaveSessions = () => {
@@ -873,6 +881,52 @@ export const editMessage = (sessionId: string, messageId: string, content: strin
   }))
   persist(sessionId)
   void streamReply(sessionId, reply, { history: path.slice(0, index), question })
+  return true
+}
+
+/**
+ * 就地编辑已完成的助手回复正文：不新增分支、不重新生成，消息 id / parentId /
+ * selectedChildId 与后续子消息都不变；revision 自增、写入 IndexedDB 并广播给其它窗口，
+ * 后续请求里的上下文（toRequestMessages / getVisibleMessages）立即使用编辑后的文本。
+ * 保存失败时回滚内存改动，编辑内容仍留在输入框里，由界面提示并允许重试或取消。
+ */
+export const editReply = async (
+  sessionId: string,
+  messageId: string,
+  content: string
+): Promise<boolean> => {
+  if (get().importingHistory || deletingSessions.has(sessionId)) {
+    return false
+  }
+  const session = getSession(sessionId)
+  if (!session || getStreamController(sessionId)) {
+    return false
+  }
+  const result = editReplyInSession(session, messageId, content)
+  if (!result.ok) {
+    notifyChat({
+      type: 'error',
+      key: result.reason === 'empty' ? 'replyEditEmpty' : 'replyEditFailed',
+    })
+    return false
+  }
+  if (!result.changed) {
+    return true
+  }
+  const edited = result.session
+  set((state) => {
+    const previous = Object.hasOwn(state.sessionCache, sessionId)
+      ? state.sessionCache[sessionId]
+      : undefined
+    return previous ? commitSession(state, previous, edited) : state
+  })
+  if (!(await persist(sessionId))) {
+    set((state) =>
+      state.sessionCache[sessionId] === edited ? commitSession(state, edited, session) : state
+    )
+    notifyChat({ type: 'error', key: 'replyEditFailed' })
+    return false
+  }
   return true
 }
 
