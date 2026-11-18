@@ -415,6 +415,17 @@ const textFromConfig = (config: PresetConfig): TextMap => {
  * 内置预设的编辑草稿：协议 / Base URL / 模型 / 记忆 / 压缩把系统默认值真正填进空字段，
  * 让用户看到当前实际生效的配置；提示词与采样参数**不预填**（空着 = 不发送 / 不设置）。
  */
+const appVersionText = (): string => {
+  try {
+    return (
+      document.querySelector('meta[name="application-version"]')?.getAttribute('content')?.trim() ||
+      '1.0.0'
+    )
+  } catch {
+    return '1.0.0'
+  }
+}
+
 const withSystemDefaults = (config: PresetConfig): PresetConfig => {
   if (!isBuiltinPreset(config)) {
     return config
@@ -422,6 +433,10 @@ const withSystemDefaults = (config: PresetConfig): PresetConfig => {
   const defaults = SYSTEM_DEFAULT_PRESET
   return {
     ...config,
+    description: config.description?.trim() || '应用自带的默认配置',
+    author: config.author?.trim() || 'Aurora Chat contributors',
+    version: config.version?.trim() || appVersionText(),
+    copyright: config.copyright?.trim() || 'MIT License · © Aurora Chat contributors',
     protocol: config.protocol ?? defaults.protocol,
     base_url: config.base_url?.trim() ? config.base_url : defaults.base_url,
     model: config.model?.trim() ? config.model : defaults.model,

@@ -126,13 +126,38 @@ export const activatePreset = async (id: string | null): Promise<void> => {
 const errorCode = (error: unknown, fallback: string): string =>
   error instanceof PresetError ? error.code : fallback
 
-/** 内置默认预设的最简存储记录：只含 schema / id / name / builtin，其余字段运行时取系统默认 */
+/** 应用版本（构建时写入 meta），读不到时回退 1.0.0 */
+const appVersion = (): string => {
+  try {
+    const value = document
+      .querySelector('meta[name="application-version"]')
+      ?.getAttribute('content')
+      ?.trim()
+    return value || '1.0.0'
+  } catch {
+    return '1.0.0'
+  }
+}
+
+/** 内置默认预设的默认元信息：描述 / 作者 / 版本 / 版权声明 */
+const defaultPresetMeta = (): Pick<
+  PresetConfig,
+  'description' | 'author' | 'version' | 'copyright'
+> => ({
+  description: '应用自带的默认配置',
+  author: 'Aurora Chat contributors',
+  version: appVersion(),
+  copyright: 'MIT License · © Aurora Chat contributors',
+})
+
+/** 内置默认预设记录：带默认元信息，其余字段运行时取系统默认 */
 const defaultPresetRecord = (): StoredPreset => ({
   id: DEFAULT_PRESET_ID,
   config: {
     schema: 1,
     id: DEFAULT_PRESET_ID,
     name: DEFAULT_PRESET_NAME,
+    ...defaultPresetMeta(),
     builtin: true,
   },
   importedAt: Date.now(),
@@ -146,19 +171,30 @@ const ensureDefaultPreset = async (): Promise<void> => {
     await putStoredPreset(defaultPresetRecord())
     return
   }
-  if (stored.builtin === true && stored.config.builtin === true && stored.config.name.trim()) {
+  const meta = defaultPresetMeta()
+  const nextConfig: PresetConfig = {
+    ...stored.config,
+    id: DEFAULT_PRESET_ID,
+    name: stored.config.name.trim() || DEFAULT_PRESET_NAME,
+    // 只补空缺，不覆盖用户已经改过的元信息
+    description: stored.config.description?.trim() || meta.description,
+    author: stored.config.author?.trim() || meta.author,
+    version: stored.config.version?.trim() || meta.version,
+    copyright: stored.config.copyright?.trim() || meta.copyright,
+    builtin: true,
+  }
+  if (
+    stored.builtin === true &&
+    stored.config.builtin === true &&
+    stored.config.name.trim() &&
+    stored.config.description === nextConfig.description &&
+    stored.config.author === nextConfig.author &&
+    stored.config.version === nextConfig.version &&
+    stored.config.copyright === nextConfig.copyright
+  ) {
     return
   }
-  await putStoredPreset({
-    ...stored,
-    config: {
-      ...stored.config,
-      id: DEFAULT_PRESET_ID,
-      name: stored.config.name.trim() || DEFAULT_PRESET_NAME,
-      builtin: true,
-    },
-    builtin: true,
-  })
+  await putStoredPreset({ ...stored, config: nextConfig, builtin: true })
 }
 
 /**
