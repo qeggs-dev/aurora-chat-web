@@ -32,6 +32,13 @@
   font-size: 14px;
 }
 
+/* 启动装配失败的原因：可能较长，限宽换行，不把整条提示挤出屏幕 */
+.bootstrapReason {
+  max-width: 60ch;
+  color: var(--dsw-alias-label-secondary);
+  word-break: break-word;
+}
+
 .loadingView {
   position: absolute;
   inset: 0;

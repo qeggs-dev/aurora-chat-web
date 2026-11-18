@@ -5,6 +5,7 @@ import {
   getActiveResolvedPreset,
   type ResolvedPreset,
 } from '../preset/index.js'
+import { isSkippedFileId, SKIPPED_FILE_PREFIX } from './files.js'
 import { readMessageEvent } from './parseEvent.js'
 import {
   buildEndpointUrl,
@@ -134,20 +135,23 @@ const hasFile = (body: CreateMessageRequest) =>
       message.content.some((block) => block.type === 'image' || block.type === 'document')
   )
 
-/** 不支持 Files 的预设上传时返回的占位 file_id 前缀（见 uploadFile） */
-const SKIPPED_FILE_PREFIX = 'skipped-'
-
-const isSkippedFileId = (fileId: string): boolean => fileId.startsWith(SKIPPED_FILE_PREFIX)
-
 /**
  * 去掉占位附件块：占位 id 只存在于本地，切回 DeepSeek 兼容预设后不能发给服务端。
- * 全是占位附件的用户消息退化成空文本消息（Anthropic 不接受空 content 数组）。
+ * 去掉后内容为空的用户消息整条丢弃：Anthropic 不接受空 content 数组 / 空字符串（400），
+ * 这种消息在 store / reply 层已经不会产生，这里只作为最后一道防线。
  */
-const stripSkippedFiles = (body: CreateMessageRequest): CreateMessageRequest => ({
-  ...body,
-  messages: body.messages.map((message) => {
-    if (message.role !== 'user' || typeof message.content === 'string') {
-      return message
+const stripSkippedFiles = (body: CreateMessageRequest): CreateMessageRequest => {
+  const messages: MessageParam[] = []
+  for (const message of body.messages) {
+    if (message.role !== 'user') {
+      messages.push(message)
+      continue
+    }
+    if (typeof message.content === 'string') {
+      if (message.content.trim() !== '') {
+        messages.push(message)
+      }
+      continue
     }
     const content = message.content.filter((block) => {
       // 文本与客户端工具结果原样保留；只有文件块可能引用本地占位 file_id
@@ -156,9 +160,12 @@ const stripSkippedFiles = (body: CreateMessageRequest): CreateMessageRequest => 
       }
       return !isSkippedFileId(block.source.file_id)
     })
-    return content.length === 0 ? { role: 'user', content: '' } : { ...message, content }
-  }),
-})
+    if (content.length > 0) {
+      messages.push({ ...message, content })
+    }
+  }
+  return { ...body, messages }
+}
 
 // ---------- 能力降级提示 ----------
 
@@ -754,12 +761,20 @@ export const buildCanonicalRequest = (
   }))
   const thinkingEnabled = request.thinking?.type === 'enabled'
   const system = request.system?.trim() ? request.system : undefined
-  // 与服务端工具的丢弃方式一致：兼容模式不发送 latest_reminder（DeepSeek 私有角色）
+  // 去掉占位附件后没有任何内容、文件块与工具结果的 user 消息：空 content 会被服务端拒绝（400）
   const messages = (
     compatible
       ? request.messages.filter((message) => message.role !== 'latest_reminder')
       : request.messages
-  ).map(toCanonicalMessage)
+  )
+    .map(toCanonicalMessage)
+    .filter(
+      (message) =>
+        message.role !== 'user' ||
+        message.content.trim() !== '' ||
+        (message.files?.length ?? 0) > 0 ||
+        (message.toolResults?.length ?? 0) > 0
+    )
   return {
     model: preset.model,
     ...(system === undefined ? {} : { system }),
@@ -787,15 +802,25 @@ export const buildCanonicalRequest = (
 
 // ---------- Delta → MessageStreamEvent ----------
 
-const STOP_REASON_BY_FINISH: Readonly<Record<FinishReason, StopReason>> = {
-  end_turn: 'end_turn',
-  max_tokens: 'max_tokens',
-  tool_use: 'tool_use',
-  refusal: 'refusal',
-  // 现有 UI 只有四种结束原因：stop_sequence / stopped / error 都按正常结束展示
-  stop_sequence: 'end_turn',
-  stopped: 'end_turn',
-  error: 'end_turn',
+/**
+ * 统一结束原因 → 现有 StopReason。
+ * stop_sequence / stopped 属于正常收尾；error（流内错误收尾）不能静默当成 end_turn，
+ * 映射为 incomplete：界面会提示回答不完整，后续请求也不把它当作可用回答回传。
+ */
+export const mapFinishReasonToStopReason = (reason: FinishReason): StopReason => {
+  switch (reason) {
+    case 'max_tokens':
+      return 'max_tokens'
+    case 'tool_use':
+      return 'tool_use'
+    case 'refusal':
+      return 'refusal'
+    case 'error':
+    case 'incomplete':
+      return 'incomplete'
+    default:
+      return 'end_turn'
+  }
 }
 
 const toMessageUsage = (usage: ProviderUsage): MessageUsage => ({
@@ -906,7 +931,7 @@ async function* streamProviderAsEvents(
     return {
       type: 'message_delta',
       delta: {
-        stop_reason: STOP_REASON_BY_FINISH[finish.reason],
+        stop_reason: mapFinishReasonToStopReason(finish.reason),
         stop_sequence: null,
       },
       ...(usage === undefined ? {} : { usage: toMessageUsage(usage) }),

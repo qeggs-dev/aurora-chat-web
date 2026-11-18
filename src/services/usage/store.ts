@@ -13,6 +13,11 @@ export type UsageRecord = {
   id: string
   sessionId: string | null
   messageId: string
+  /**
+   * 本次流式请求的稳定 id（一次 stream 一个，工具循环 / 重试各算一次）。
+   * 记账去重只认它：同一条回复可能分多次请求，不能再用 messageId + token 判断重复。
+   */
+  requestId?: string
   protocol: UsageProtocol
   model: string
   inputTokens: number
@@ -213,9 +218,12 @@ export const recordUsage = async (
   input: Omit<UsageRecord, 'id' | 'createdAt' | 'totalTokens'>
 ): Promise<UsageRecord> => {
   const total = input.inputTokens + input.outputTokens
-  const existing = state.records.find(
-    (item) => item.messageId === input.messageId && item.totalTokens === total
-  )
+  // 只有 requestId 能判定「同一次 stream 被重复记账」；没有 requestId 时不去重
+  // （工具循环结束后已经合并成一条记录，messageId + token 相同不代表重复）。
+  const existing =
+    input.requestId === undefined
+      ? undefined
+      : state.records.find((item) => item.requestId === input.requestId)
   if (existing) {
     return existing
   }

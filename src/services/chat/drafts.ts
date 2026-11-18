@@ -1,14 +1,19 @@
 import { create } from 'zustand'
 import type { TranslationMessage } from '../../i18n/index.js'
 import { createId } from '../../utils/id.js'
+import { deleteFile } from '../api/client.js'
 import {
   cancelUpload,
   isImage,
   resolveMimeType,
   uploadAttachment,
+  useUploads,
   validateFiles,
   type UploadTask,
 } from '../attachments.js'
+import { useSettings } from '../settings.js'
+import { loadReferencedFileIds } from './db.js'
+import { cleanupDraftRemoteFile } from './draftFiles.js'
 import type { FileAttachment } from './types.js'
 
 export type DraftAttachment = {
@@ -129,33 +134,59 @@ const releaseAttachment = (attachment: DraftAttachment, cancel: boolean) => {
   }
 }
 
+/**
+ * 被移除 / 清空的草稿附件如果已上传成功，且没有任何会话引用它（sessionSummaries 的 fileIds 索引），
+ * 就删掉远端文件释放文件数 / 存储配额；上传中 / 失败 / 占位 id 没有可删对象。
+ * 失败静默：清理泄漏不应打断输入框操作。任务在取消后会被清掉，所以调用方先取快照。
+ */
+const cleanupRemoteFile = (attachmentId: string, task: UploadTask | undefined) => {
+  if (task?.status !== 'done') {
+    return
+  }
+  const apiKey = useSettings.getState().apiKey ?? ''
+  void cleanupDraftRemoteFile(attachmentId, task, {
+    loadReferencedFileIds,
+    deleteRemoteFile: (serverId) => deleteFile(apiKey, serverId),
+  })
+}
+
 export const removeDraftAttachment = (sessionId: string | null, attachmentId: string) => {
   const attachment = getDraft(sessionId).attachments.find((item) => item.id === attachmentId)
   if (!attachment) {
     return
   }
+  const task = useUploads.getState().tasks[attachmentId]
   releaseAttachment(attachment, true)
   updateDraft(sessionId, (draft) => ({
     ...draft,
     attachments: draft.attachments.filter((item) => item.id !== attachmentId),
   }))
+  cleanupRemoteFile(attachmentId, task)
 }
 
-/** 发送成功后原件与 serverId 已交给会话，释放预览但保留上传完成态。 */
+/** 发送成功后原件与 serverId 已交给会话，释放预览但保留上传完成态（远端文件会被会话引用，不能删）。 */
 export const clearSentDraft = (sessionId: string | null) => {
   getDraft(sessionId).attachments.forEach((attachment) => releaseAttachment(attachment, false))
   updateDraft(sessionId, () => EMPTY_DRAFT)
 }
 
-/** 删除会话或替换历史成功后，释放尚未发送的草稿及上传任务。 */
+/** 删除会话或替换历史成功后，释放尚未发送的草稿、上传任务，以及没有被任何会话引用的远端文件。 */
 export const clearDraft = (sessionId: string | null) => {
-  getDraft(sessionId).attachments.forEach((attachment) => releaseAttachment(attachment, true))
+  const tasks = useUploads.getState().tasks
+  getDraft(sessionId).attachments.forEach((attachment) => {
+    releaseAttachment(attachment, true)
+    cleanupRemoteFile(attachment.id, tasks[attachment.id])
+  })
   updateDraft(sessionId, () => EMPTY_DRAFT)
 }
 
 export const clearAllDrafts = () => {
+  const tasks = useUploads.getState().tasks
   for (const draft of useDrafts.getState().drafts.values()) {
-    draft.attachments.forEach((attachment) => releaseAttachment(attachment, true))
+    draft.attachments.forEach((attachment) => {
+      releaseAttachment(attachment, true)
+      cleanupRemoteFile(attachment.id, tasks[attachment.id])
+    })
   }
   useDrafts.setState({ drafts: new Map() })
 }

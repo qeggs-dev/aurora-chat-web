@@ -1,11 +1,17 @@
 import { create } from 'zustand'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamChat, supportsFileUpload } from '../api/client.js'
-import type { ChatModel, ClientToolParam, CreateMessageRequest } from '../api/types.js'
+import type {
+  ChatModel,
+  ClientToolParam,
+  CreateMessageRequest,
+  MessageUsage,
+} from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import { useSettings } from '../settings.js'
 import { MEMORY_TOOLS, runMemoryTool } from '../memory/store.js'
+import { notifyChat } from '../notices.js'
 import { DEFAULT_PRESET_COMPACTION } from '../preset/index.js'
 import { getActivePreset, getActiveResolvedPreset } from '../preset/store.js'
 import { recordUsage } from '../usage/store.js'
@@ -19,6 +25,7 @@ import {
   getDraft,
   prepareDraftMessage,
 } from './drafts.js'
+import { hasRequestContent } from './fileBlocks.js'
 import { createLatestReminder } from './latestReminder.js'
 import {
   applyEvent,
@@ -29,6 +36,14 @@ import {
   toRequestMessages,
   toToolContinuationMessages,
 } from './reply.js'
+import {
+  createChatChannel,
+  nextRevision,
+  shouldApplyRemoteRevision,
+  type ChatChannel,
+  type SessionChangeMessage,
+} from './sync.js'
+import { mergeUsage } from './usageTotals.js'
 import {
   toSessionSummary,
   type AssistantMessage,
@@ -220,10 +235,12 @@ const updateSession = (id: string, update: (session: Session) => Session) =>
     if (!previous) {
       return state
     }
-    const session = update(previous)
-    if (session === previous) {
+    const updated = update(previous)
+    if (updated === previous) {
       return state
     }
+    // 每次真实更新都推进 revision：多窗口保存时用它判断谁的数据更新
+    const session = { ...updated, revision: nextRevision(previous.revision) }
     return {
       sessionCache: { ...state.sessionCache, [id]: session },
       sessions: sameSummary(previous, session)
@@ -246,6 +263,97 @@ const updateReply = (sessionId: string, reply: AssistantMessage) =>
     ),
   }))
 
+/** 从存储重新加载一个会话（保存被判定为旧快照时、或收到其他窗口的更新广播） */
+const reloadSessionFromStorage = async (sessionId: string) => {
+  const epoch = historyEpoch
+  try {
+    const stored = await db.loadSession(sessionId)
+    if (
+      !stored ||
+      epoch !== historyEpoch ||
+      get().importingHistory ||
+      getStreamController(sessionId)
+    ) {
+      return
+    }
+    const settled = settleInterrupted(normalizeSession(stored))
+    // 读取期间可能已重命名，不要把列表里的新元数据覆盖回旧值。
+    const summary = get().sessions.find((session) => session.id === sessionId)
+    const session = summary && !sameSummary(settled, summary) ? { ...settled, ...summary } : settled
+    const local = getSession(sessionId)
+    if (local && !shouldApplyRemoteRevision(session.revision, local.revision)) {
+      return
+    }
+    touchSession(sessionId)
+    set((state) => ({
+      sessionCache: { ...state.sessionCache, [sessionId]: session },
+      sessionLoadErrors: Object.fromEntries(
+        Object.entries(state.sessionLoadErrors).filter(([id]) => id !== sessionId)
+      ),
+      sessionSaveErrors: Object.fromEntries(
+        Object.entries(state.sessionSaveErrors).filter(([id]) => id !== sessionId)
+      ),
+    }))
+    trimSessionCache()
+  } catch (error) {
+    db.reportStorageError('reload session')(error)
+  }
+}
+
+/** 刷新单个会话的列表摘要（标题 / 更新时间可能被其他窗口改过） */
+const refreshSessionSummary = async (sessionId: string) => {
+  try {
+    const summary = await db.loadSessionSummary(sessionId)
+    if (!summary) {
+      return
+    }
+    set((state) => {
+      if (!state.sessions.some((session) => session.id === sessionId)) {
+        return state
+      }
+      return {
+        sessions: sortSessions(
+          state.sessions.map((session) => (session.id === sessionId ? summary : session))
+        ),
+      }
+    })
+  } catch (error) {
+    db.reportStorageError('refresh session summary')(error)
+  }
+}
+
+/** 收到其他窗口的「会话已保存」广播：刷新列表摘要，必要时丢弃本地快照并重新加载 */
+const applyRemoteSessionChange = (message: SessionChangeMessage) => {
+  if (get().importingHistory) {
+    return
+  }
+  void refreshSessionSummary(message.sessionId)
+  const local = getSession(message.sessionId)
+  if (!local || getStreamController(message.sessionId)) {
+    return
+  }
+  if (!shouldApplyRemoteRevision(message.revision, local.revision)) {
+    return
+  }
+  void reloadSessionFromStorage(message.sessionId)
+}
+
+/** 多窗口同步通道：保存成功后广播，其他窗口收到后失效 / 重载对应缓存 */
+let chatChannel: ChatChannel | null | undefined
+
+/** 绑定跨窗口同步；页面卸载时解除（BroadcastChannel 不支持时是空操作） */
+export const bindChatSync = () => {
+  chatChannel ??= createChatChannel(applyRemoteSessionChange)
+  return () => {
+    chatChannel?.close()
+    chatChannel = null
+  }
+}
+
+const broadcastSessionChange = (sessionId: string, revision: number) => {
+  chatChannel?.post({ type: 'session-changed', sessionId, revision })
+}
+
 const persist = (sessionId: string) => {
   const session = getSession(sessionId)
   if (session) {
@@ -257,13 +365,25 @@ const persist = (sessionId: string) => {
     const files = pendingFiles.get(sessionId)
     void db
       .saveSession(session, files)
-      .then(() => {
+      .then((result) => {
         if (epoch !== historyEpoch || !getSession(sessionId)) {
           return
         }
         if (pendingFiles.get(sessionId) === files) {
           pendingFiles.delete(sessionId)
         }
+        if (result.stale) {
+          // 其他窗口已写入更新的修订：放弃这次写入，清除保存失败提示并重载存储里的数据。
+          unsavedSessions.delete(sessionId)
+          set((state) => ({
+            sessionSaveErrors: Object.fromEntries(
+              Object.entries(state.sessionSaveErrors).filter(([id]) => id !== sessionId)
+            ),
+          }))
+          void reloadSessionFromStorage(sessionId)
+          return
+        }
+        broadcastSessionChange(sessionId, session.revision)
         if (getSession(sessionId) === session) {
           unsavedSessions.delete(sessionId)
           set((state) => ({
@@ -540,7 +660,14 @@ export const renameSession = (id: string, title: string) => {
         session.id === id ? { ...session, title } : session
       ),
     }))
-    void db.renameSession(id, title).catch(db.reportStorageError('rename session'))
+    void db
+      .renameSession(id, title)
+      .then((revision) => {
+        if (revision !== null) {
+          broadcastSessionChange(id, revision)
+        }
+      })
+      .catch(db.reportStorageError('rename session'))
   }
 }
 
@@ -621,6 +748,12 @@ export const sendMessage = (targetSessionId: string | null) => {
     return false
   }
   const { text, files } = prepared
+  // 当前预设不支持 Files 附件时，上传只会得到本地占位 id；只有附件没有正文的消息发出去就是空提问，
+  // 请求里的附件又会被过滤掉，直接拒绝并提示用户补文字或切换预设。
+  if (!text && files.length > 0 && !supportsFileUpload()) {
+    notifyChat({ type: 'error', key: 'attachmentOnlyUnsupported' })
+    return false
+  }
   const now = Date.now()
   let sessionId = targetSessionId
   if (
@@ -635,6 +768,7 @@ export const sendMessage = (targetSessionId: string | null) => {
       title: '',
       createdAt: now,
       updatedAt: now,
+      revision: 0,
       messages: [],
       rootMessageId: null,
     }
@@ -721,7 +855,8 @@ export const editMessage = (sessionId: string, messageId: string, content: strin
   const index = path.findIndex((message) => message.id === messageId)
   const previous = path[index]
   const text = content.trim()
-  if (previous?.role !== 'user' || (!text && previous.files.length === 0)) {
+  // 纯附件提问在历史里保留附件 id；占位附件（不支持 Files 的预设）过滤后没有可发送内容时拒绝编辑
+  if (previous?.role !== 'user' || !hasRequestContent(text, previous.files)) {
     return false
   }
   const question: UserMessage = {
@@ -1126,6 +1261,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
   }
   streamFlushes.set(sessionId, flush)
   let streamStartedAt = Date.now()
+  /** 本次流式回复的请求 id：用量记账用它去重（工具循环 / 重试各自独立） */
+  const requestId = createId()
+  /** 工具循环会发多次请求：结束前累加各轮 usage，只记一条用量 */
+  let totalUsage: MessageUsage | undefined
   // 记忆工具只在当前预设启用记忆时挂载；关闭时请求里不会出现任何客户端 tools
   const clientTools = memoryTools()
   let compactionReady = false
@@ -1249,7 +1388,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
               kind: error.kind,
               message: error.message,
               status: error.status,
-              localMessage: error.localMessage,
+              // 流在 message_stop 前断开：给明确文案（断流可能没有正文，不能显示空白回答）
+              localMessage:
+                error.localMessage ??
+                (error.kind === 'interrupted' ? { key: 'replyInterrupted' } : undefined),
             })
           } else {
             reply = settleReply(reply, 'error', Date.now(), {
@@ -1260,6 +1402,9 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           break
         }
       }
+
+      // 本轮请求结束（含失败 / 停止）：先累计本轮用量，下一轮工具循环重置 reply.usage 不会丢掉它
+      totalUsage = mergeUsage(totalUsage, reply.usage)
 
       // ---- 工具循环：以 tool_use 正常结束的回复执行记忆工具并继续下一轮 ----
       const pending =
@@ -1314,24 +1459,25 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       updateReply(sessionId, reply)
     }
   } finally {
-    // 整轮（含工具往返）落一条用量：协议 / 模型来自当前预设，token 取最后一轮的 usage
-    if (reply.usage) {
+    // 整轮（含工具往返）落一条用量：token 取各轮累加值，requestId 标识本次 stream
+    if (totalUsage) {
       const preset = getActivePreset()
       void recordUsage({
+        requestId,
         sessionId,
         messageId: reply.id,
         protocol: preset?.protocol ?? 'anthropic',
         model: preset?.model ?? reply.model ?? 'unknown',
-        inputTokens: reply.usage.input_tokens,
-        outputTokens: reply.usage.output_tokens,
-        cacheReadTokens: reply.usage.cache_read_input_tokens,
-        cacheWriteTokens: reply.usage.cache_creation_input_tokens,
-        ...(reply.usage.reasoning_tokens === undefined
+        inputTokens: totalUsage.input_tokens,
+        outputTokens: totalUsage.output_tokens,
+        cacheReadTokens: totalUsage.cache_read_input_tokens,
+        cacheWriteTokens: totalUsage.cache_creation_input_tokens,
+        ...(totalUsage.reasoning_tokens === undefined
           ? {}
-          : { reasoningTokens: reply.usage.reasoning_tokens }),
-        ...(reply.usage.server_tool_use === undefined
+          : { reasoningTokens: totalUsage.reasoning_tokens }),
+        ...(totalUsage.server_tool_use === undefined
           ? {}
-          : { searchCount: reply.usage.server_tool_use.web_search_requests }),
+          : { searchCount: totalUsage.server_tool_use.web_search_requests }),
         durationMs: Date.now() - streamStartedAt,
       }).catch(() => {})
     }

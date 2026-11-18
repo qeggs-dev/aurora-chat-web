@@ -28,6 +28,20 @@
     "src/services/style/effects.ts",
     "src/services/chat/compaction.ts",
     "src/services/memory/schema.ts",
-    "src/services/memory/store.ts"
+    "src/services/memory/store.ts",
+    "src/services/api/files.ts",
+    "src/services/api/types.ts",
+    "src/services/chat/sync.ts",
+    "src/services/chat/fileBlocks.ts",
+    "src/services/chat/draftFiles.ts",
+    "src/services/chat/usageTotals.ts",
+    "src/services/chat/reply.ts",
+    "src/services/chat/describe.ts",
+    "src/services/chat/view.ts",
+    "src/services/chat/db.ts",
+    "src/utils/url.ts",
+    "src/app/bootstrap.ts",
+    "src/components/base/ErrorBoundary.tsx",
+    "src/components/session/SessionErrorBoundary.tsx"
   ]
 }

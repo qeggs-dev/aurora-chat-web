@@ -208,7 +208,15 @@ export type CreateMessageRequest = {
 
 // ---------- 响应：流式事件 ----------
 
-export type StopReason = 'end_turn' | 'max_tokens' | 'tool_use' | 'refusal'
+/**
+ * 结束原因。incomplete：适配层收到了 error / 未知 incomplete 等无法正常收尾的信号，
+ * 回答可能不完整；不能当正常完成的回答回传上下文，界面需要给出明确提示。
+ */
+export type StopReason = 'end_turn' | 'max_tokens' | 'tool_use' | 'refusal' | 'incomplete'
+
+/** 异常结束原因：不能作为可用回答进入后续请求上下文 */
+export const isAbnormalStopReason = (reason: StopReason | undefined): boolean =>
+  reason === 'incomplete'
 
 export type StopDetails = { type: 'refusal'; category: null; explanation: null }
 

@@ -1,4 +1,5 @@
 import { isTranslationKey, translate } from '../../i18n/index.js'
+import { isAbnormalStopReason } from '../api/types.js'
 import { classifyStatus } from '../api/errors.js'
 import type { AssistantMessage } from './types.js'
 
@@ -31,6 +32,10 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
     if (kind === 'network') {
       return { text: translate('commonNetworkErrorToast') }
     }
+    // 断流可能一帧内容都没收到：给明确文案，不能显示空白回答。
+    if (kind === 'interrupted') {
+      return { text: message || translate('replyInterrupted') }
+    }
     switch (classifyStatus(status)) {
       case 'unauthorized':
         return { text: translate('replyInvalidApiKey'), action: 'apiKey' }
@@ -52,6 +57,10 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
   if (reply.stopReason === 'refusal') {
     // 导入的拒绝回复优先展示归档中的模板，普通正文仍不可展示。
     return { text: template || translate('replyRefused'), presentation: 'response' }
+  }
+  // 协议报告了异常结束（流内错误 / 未知 incomplete 原因）：回答不完整，不能静默当成正常回答。
+  if (isAbnormalStopReason(reply.stopReason)) {
+    return { text: translate('replyIncomplete') }
   }
   if (template) {
     return { text: template, presentation: 'response' }

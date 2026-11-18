@@ -164,6 +164,11 @@ export type Session = {
   title: string
   createdAt: number
   updatedAt: number
+  /**
+   * 单调递增的本地修订号：每次会话更新自增，多窗口保存时用它拒绝旧快照覆盖新数据。
+   * 旧数据没有该字段，读取时按 0 处理（见 normalizeSession）。
+   */
+  revision: number
   /** 包含所有分支的消息，按创建顺序存储。 */
   messages: Message[]
   /** undefined 表示线性消息列表；null 表示空会话。 */

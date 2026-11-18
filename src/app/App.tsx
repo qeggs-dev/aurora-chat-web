@@ -1,10 +1,12 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
 import { useIsMobile, useMobileViewport, usePreventPageScroll } from './viewport.js'
 import {
   bindChatPersistence,
+  bindChatSync,
   initChat,
+  newChat,
   retrySaveSessions,
   selectSession,
   useChatStore,
@@ -12,6 +14,7 @@ import {
 import { SearchPanel } from '../components/search/SearchPanel.js'
 import { closeSearchPanel } from '../components/search/searchPanelState.js'
 import { SessionView } from '../components/session/SessionView.js'
+import { SessionErrorBoundary } from '../components/session/SessionErrorBoundary.js'
 import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
@@ -19,6 +22,11 @@ import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { DisclaimerGate } from '../components/settings/DisclaimerGate.js'
 import { Toast } from '../components/base/Toast.js'
 import { showToast } from '../components/base/toastState.js'
+import { onChatNotice } from '../services/notices.js'
+import { initStylePacks } from '../services/style/store.js'
+import { getActiveResolvedPreset, initPresets, usePresetStore } from '../services/preset/store.js'
+import { initUsage } from '../services/usage/store.js'
+import { initMemory, setMemoryEnabled } from '../services/memory/store.js'
 import { onUploadNotice } from '../services/attachments.js'
 import { Button } from '../components/base/Button.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
@@ -26,16 +34,58 @@ import { CollapsedSider } from '../components/sider/CollapsedSider.js'
 import { closeMobileSider } from '../components/sider/mobileSiderState.js'
 import { MobileSider, Sider } from '../components/sider/Sider.js'
 import styles from './App.module.css'
+import { bootstrapApp, type BootstrapServices } from './bootstrap.js'
 import { AppServicesProvider } from './AppServices.js'
-import { getAppContext } from './context.js'
+import { getAppContext, resetAppContext, type AppContext } from './context.js'
 
-/** 应用级 Cordis 容器：模块加载时创建并注册六个内置服务，start 在启动 effect 里执行 */
-const appContext = getAppContext()
+/** 装配成功：用 Cordis 容器里的六个服务初始化（顺序与 Cordis 化之前一致） */
+const serviceBootstrap = (services: ReturnType<AppContext['services']>): BootstrapServices => ({
+  initChat,
+  style: services.style,
+  presets: {
+    init: services.presets.init,
+    getMemoryEnabled: () => services.presets.getActiveResolved()?.memory.enabled ?? false,
+    subscribe: (listener) =>
+      services.presets.subscribe((state, previous) => {
+        if (state.active !== previous.active) {
+          listener()
+        }
+      }),
+  },
+  usage: services.usage,
+  memory: services.memory,
+  disclaimerAccepted: () => useSettings.getState().disclaimerAccepted,
+  ensureApiKey,
+})
+
+/** 装配失败：直连模块初始化（Phase 1 的界面本来就直连 store，功能不受影响） */
+const fallbackBootstrap = (): BootstrapServices => ({
+  initChat,
+  style: { init: initStylePacks },
+  presets: {
+    init: initPresets,
+    getMemoryEnabled: () => getActiveResolvedPreset()?.memory.enabled ?? false,
+    subscribe: (listener) =>
+      usePresetStore.subscribe((state, previous) => {
+        if (state.active !== previous.active) {
+          listener()
+        }
+      }),
+  },
+  usage: { init: initUsage },
+  memory: { init: initMemory, setEnabled: setMemoryEnabled },
+  disclaimerAccepted: () => useSettings.getState().disclaimerAccepted,
+  ensureApiKey,
+})
 
 export const App = () => {
   const t = useTranslate()
   const isMobile = useIsMobile()
   const locale = useSettings((state) => state.locale)
+  // 应用级 Cordis 容器：启动失败后「重试」会换成新容器（resetAppContext），因此存在 state 里
+  const [context, setContext] = useState<AppContext>(() => getAppContext())
+  // 服务装配失败的可读原因；同时已经退回直连初始化，界面仍可用
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null)
   // 移动端侧边栏以独立抽屉管理开合状态
   const siderCollapsed = useSettings((state) => state.siderCollapsed) && !isMobile
   const ready = useChatStore((state) => state.ready)
@@ -64,7 +114,11 @@ export const App = () => {
 
   // 文件数、存储空间达到上限时，附件上只显示「上传失败」，原因用 toast 说明
   useEffect(() => onUploadNotice(showToast), [])
+  // 服务层需要 toast 的提示（如「预设不支持附件，不能只发附件」）
+  useEffect(() => onChatNotice(showToast), [])
   useEffect(bindChatPersistence, [])
+  // 多窗口同步：保存后广播、收到其他窗口的更新后失效 / 重载缓存
+  useEffect(bindChatSync, [])
 
   // 搜索结果面板只属于当前会话
   useEffect(closeSearchPanel, [activeId])
@@ -73,61 +127,52 @@ export const App = () => {
   // 移动端选中会话、切换布局后收起抽屉
   useEffect(closeMobileSider, [activeId, isMobile])
 
-  // 应用级 Cordis 容器：启动六个内置服务，再经各服务调用 init（顺序与 Cordis 化之前一致）
+  // 应用级 Cordis 容器：先等六个服务装配，再按服务初始化；装配失败时退回直连模块初始化，
+  // 并把原因显示在顶部（可重试），不会因为装配失败永远停在「会话加载中」。
   useEffect(() => {
     let cancelled = false
-    let memoryReady = false
-    let unsubscribePreset = () => {}
+    let disposeBootstrap = () => {}
     const boot = async () => {
-      try {
-        await appContext.start()
-      } catch {
-        // start() 已把「哪个服务、缺什么依赖」输出到控制台；Phase 1 界面仍按直连 store 工作
-        return
-      }
+      const result = await bootstrapApp({
+        start: () => context.start(),
+        fromServices: () => serviceBootstrap(context.services()),
+        fromFallback: fallbackBootstrap,
+      })
       if (cancelled) {
+        result.dispose()
         return
       }
-      const services = appContext.services()
-      void initChat()
-      // 自定义样式包：读取已安装的包并应用当前启用的一套
-      void services.style.init()
-      // 记忆：预设恢复后才初始化（按当前预设的 memory.enabled 决定是否给模型挂记忆工具）
-      // 之后切换预设（activatePreset）时同步记忆开关，关闭记忆时请求里不出现任何工具。
-      const presetsReady = services.presets.init()
-      // 用量：恢复最近请求记录（统计面板用）
-      void services.usage.init()
-      void presetsReady.then(() => {
-        // 预设解析后的记忆开关：默认预设留空 = 系统默认（关闭）
-        void services.memory.init(services.presets.getActiveResolved()?.memory.enabled ?? false)
-        memoryReady = true
-      })
-      unsubscribePreset = services.presets.subscribe((state, previous) => {
-        if (!memoryReady || state.active === previous.active) {
-          return
-        }
-        void services.memory.setEnabled(
-          services.presets.getActiveResolved()?.memory.enabled ?? false
-        )
-      })
-      // 首次使用先确认非官方声明；确认后再要求 API Key
-      if (useSettings.getState().disclaimerAccepted) {
-        ensureApiKey()
-      }
+      disposeBootstrap = result.dispose
+      setBootstrapError(result.error)
     }
     void boot()
     return () => {
       cancelled = true
-      unsubscribePreset()
+      disposeBootstrap()
     }
-  }, [])
+  }, [context])
+
+  /** 装配失败后的重试：Cordis 的 start() 只尝试一次，必须换一个新容器再装配 */
+  const retryBootstrap = () => {
+    setBootstrapError(null)
+    setContext(resetAppContext())
+  }
 
   return (
-    <AppServicesProvider context={appContext}>
+    <AppServicesProvider context={context}>
       <>
         <div ref={frameRef} className={styles.frame}>
           {isMobile ? <MobileSider /> : siderCollapsed ? null : <Sider />}
           <main className={styles.main}>
+            {bootstrapError ? (
+              <div className={styles.saveError} role="alert">
+                <span>{t('bootstrapFailed')}</span>
+                <span className={styles.bootstrapReason}>{bootstrapError}</span>
+                <Button variant="outlined" size="s" onClick={retryBootstrap}>
+                  {t('retry')}
+                </Button>
+              </div>
+            ) : null}
             {saveError ? (
               <div className={styles.saveError} role="alert">
                 <span>{t('sessionSaveFailed')}</span>
@@ -170,11 +215,13 @@ export const App = () => {
                   </div>
                 </div>
               ) : session ? (
-                <SessionView
-                  session={session}
-                  streaming={streaming}
-                  siderCollapsed={siderCollapsed}
-                />
+                <SessionErrorBoundary key={session.id} onBack={newChat}>
+                  <SessionView
+                    session={session}
+                    streaming={streaming}
+                    siderCollapsed={siderCollapsed}
+                  />
+                </SessionErrorBoundary>
               ) : (
                 <Welcome />
               )}

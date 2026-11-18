@@ -287,3 +287,20 @@ let appContext: AppContext | undefined
 
 /** 应用容器单例：App 模块加载时首次调用即创建（只创建一次） */
 export const getAppContext = (): AppContext => (appContext ??= createAppContext())
+
+/**
+ * 丢弃当前容器并重新创建一个。
+ * Cordis 的 start() 只尝试一次（失败后复用同一个 Promise），装配失败后的「重试」必须换新容器；
+ * 旧容器异步卸载，不阻塞新的启动。
+ */
+export const resetAppContext = (): AppContext => {
+  const previous = appContext
+  appContext = createAppContext()
+  if (previous) {
+    void previous.dispose().catch((error: unknown) => {
+      // oxlint-disable-next-line no-console
+      console.error('Cordis 容器卸载失败', error)
+    })
+  }
+  return appContext
+}

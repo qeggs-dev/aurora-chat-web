@@ -3,6 +3,7 @@ import type {
   WebFetchResult,
   WebFetchToolResultBlock,
 } from '../../api/types.js'
+import { isWebUrl } from '../../../utils/url.js'
 import type {
   AssistantMessage,
   FileAttachment,
@@ -23,15 +24,6 @@ export type LocalSession = {
 }
 
 const time = (value: string) => Date.parse(value)
-
-/** 链接会渲染成 href，只接受 HTTP / HTTPS。 */
-const isWebUrl = (value: string) => {
-  try {
-    return ['http:', 'https:'].includes(new URL(value).protocol)
-  } catch {
-    return false
-  }
-}
 
 const toFile = (file: FileEntry): FileAttachment => ({
   id: file.id,
@@ -286,6 +278,8 @@ export const toLocalSession = (file: SessionFile): LocalSession => {
     title: file.title ?? '',
     createdAt: time(file.inserted_at),
     updatedAt: time(file.updated_at),
+    // 导入的会话从 0 起算 revision；替换历史后其他窗口会重新加载
+    revision: 0,
     ...buildTree(file),
   }
   const images = new Map<string, string>()

@@ -286,14 +286,19 @@ export const toResponsesCitation = (value: unknown): NormalizedCitation | null =
   }
 }
 
-const mapIncompleteReason = (reason: string | undefined): FinishReason => {
+/**
+ * response.incomplete 的 incomplete_details.reason → 统一结束原因。
+ * 只有已知的「输出上限 / 内容过滤」能明确归类；未知原因映射为 incomplete，
+ * 不能静默当成 end_turn，否则界面会把异常截断的回答当成正常完成。
+ */
+export const mapIncompleteReason = (reason: string | undefined): FinishReason => {
   switch (reason) {
     case 'max_output_tokens':
       return 'max_tokens'
     case 'content_filter':
       return 'refusal'
     default:
-      return 'end_turn'
+      return 'incomplete'
   }
 }
 

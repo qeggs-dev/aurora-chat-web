@@ -13,6 +13,11 @@ export const en = {
   sessionSaveFailed:
     'Chats or attachments have not been saved locally. Retry before closing this page.',
   sessionDeleteFailed: 'Unable to delete this chat. Please try again.',
+  sessionRenderFailed: 'This chat failed to render. Go back to the chat list and reopen it.',
+  backToSessions: 'Back to chats',
+  bootstrapFailed: 'Service setup failed; using fallback initialization. Features remain available.',
+  appCrashed: 'Something went wrong',
+  reloadApp: 'Reload',
   settings: 'Settings',
   appName: 'Aurora Chat',
   aboutTitle: 'About',
@@ -111,6 +116,12 @@ export const en = {
   completionServerBusyToast: 'Server busy, please try again later.',
   unknownError: 'Unknown error',
   replyRefused: "Sorry, that's beyond my current scope. Let's talk about something else.",
+  replyInterrupted:
+    'The reply was interrupted before it finished. No complete content was received; please try again.',
+  replyIncomplete:
+    'The reply ended abnormally (the provider reported an unexpected finish reason). The answer may be incomplete.',
+  attachmentOnlyUnsupported:
+    'The active preset does not support file attachments, so an attachment-only message cannot be sent. Add text or switch presets.',
   messageThinkDuration: 'Thought for {count} second',
   messageThinkDurationPlural: 'Thought for {count} seconds',
   messageThinkStopped: 'Stopped',
@@ -256,6 +267,9 @@ export const en = {
   stylePackFailed: 'The style pack operation failed. Please try again.',
   stylePackImported: 'Style pack imported',
   stylePackImportFailed: 'Import failed: {message}',
+  stylePackBrokenBadge: 'Damaged',
+  stylePackBrokenHint:
+    'This style pack record is incomplete (missing assets) and cannot be activated. Please import it again.',
   stylePackLicenseSummary: 'License ({name})',
   stylePackVersion: 'Version',
   stylePackAuthor: 'Author',
@@ -317,12 +331,27 @@ export const en = {
     'Imported presets are stored on this device. A preset with the same id replaces the existing one (built-in presets are protected).',
   presetImport: 'Import preset (ZIP)',
   presetImporting: 'Importing...',
+  presetImportedNotActive:
+    'The preset was imported but is not active yet: click Activate and new requests will use it.',
   presetNew: 'New',
   presetLoading: 'Loading presets...',
   presetEmpty: 'No presets installed',
   presetEmptyHint: 'Import a preset ZIP or click New to create one.',
   presetTabListLabel: 'Presets',
   presetUnsaved: 'Unsaved changes',
+  presetUnsavedConfirmTitle: 'Unsaved preset changes',
+  presetUnsavedConfirm:
+    'There are unsaved preset changes. Continuing will discard those changes.',
+  presetUnsavedDiscardAndClose: 'Discard and close',
+  presetUnsavedDiscardAndSwitch: 'Discard and switch',
+  presetOverwriteConfirmTitle: 'Overwrite the preset with the same id?',
+  presetOverwriteConfirm:
+    'A user-created preset with the same id "{id}" already exists ("{name}"). Importing replaces its configuration and cannot be undone.',
+  presetOverwriteConfirmAction: 'Overwrite',
+  presetStaleDraftConfirmTitle: 'Preset was updated',
+  presetStaleDraftConfirm:
+    '"{name}" was re-imported or saved on this device after this draft was loaded. Saving now replaces the newer content with the current draft.',
+  presetStaleDraftConfirmAction: 'Save anyway',
   presetNewDefaultName: 'New preset',
   presetRestore: 'Revert',
   presetRestoring: 'Reverting...',

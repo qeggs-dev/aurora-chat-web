@@ -324,6 +324,26 @@ test('CanonicalRequest：user 内容块转成正文 + 附件 + 工具结果', ()
   ])
 })
 
+test('CanonicalRequest：空 user 消息（如只剩占位附件）被过滤，不发空 content', () => {
+  const canonical = buildCanonicalRequest(
+    request({
+      messages: [
+        // 占位附件块只存在于本地，转换时被丢弃后消息就空了
+        {
+          role: 'user',
+          content: [{ type: 'image', source: { type: 'file', file_id: 'skipped-1' } }],
+        },
+        { role: 'user', content: '' },
+        { role: 'user', content: 'real' },
+      ],
+    }),
+    preset(),
+    PROFILE,
+    false
+  )
+  assert.deepEqual(canonical.messages, [{ role: 'user', content: 'real' }])
+})
+
 test('CanonicalRequest：assistant 块转成统一块，服务端工具块转 provider_block', () => {
   const canonical = buildCanonicalRequest(
     request({

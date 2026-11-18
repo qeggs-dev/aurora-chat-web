@@ -225,6 +225,8 @@ export type FinishReason =
   | 'stopped'
   /** 流内错误；随后不会再出现 finish */
   | 'error'
+  /** 收到无法归类的 incomplete 原因：回答不完整，不能当成正常结束 */
+  | 'incomplete'
 
 export type BlockKind = 'text' | 'thinking' | 'tool_use' | 'provider_block'
 

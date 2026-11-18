@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import { isStaleSave, nextRevision } from './sync.js'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
@@ -78,15 +79,41 @@ const getDB = () =>
 export const loadSessionSummaries = async (): Promise<SessionSummary[]> =>
   (await (await getDB()).getAll('sessionSummaries')).map(toSessionSummary)
 
+/** 单条列表摘要：多窗口广播后刷新该会话的标题 / 更新时间 */
+export const loadSessionSummary = async (id: string): Promise<SessionSummary | undefined> => {
+  const summary = await (await getDB()).get('sessionSummaries', id)
+  return summary ? toSessionSummary(summary) : undefined
+}
+
+/** 全部仍被会话引用的附件本地 id（sessionSummaries.fileIds 多值索引） */
+export const loadReferencedFileIds = async (): Promise<Set<string>> => {
+  const keys = await (await getDB()).getAllKeysFromIndex('sessionSummaries', 'fileIds')
+  return new Set(keys.filter((key): key is string => typeof key === 'string'))
+}
+
 export const loadSession = async (id: string): Promise<Session | undefined> =>
   (await getDB()).get('sessions', id)
 
-export const saveSession = async (session: Session, files: StoredFile[] = []): Promise<void> => {
+/**
+ * 保存会话、摘要与原件。
+ * 事务里先读旧记录的 revision：存储里的更高说明本窗口的快照已过期，
+ * 放弃本次写入并返回 stale，让调用方重新加载存储里的新数据，避免旧快照覆盖新数据。
+ */
+export const saveSession = async (
+  session: Session,
+  files: StoredFile[] = []
+): Promise<SaveSessionResult> => {
   const summary = storedSummary(session)
   const tx = (await getDB()).transaction(['sessions', 'sessionSummaries', 'files'], 'readwrite')
+  let stale = false
   await Promise.all([
     (async () => {
       try {
+        const stored = await tx.objectStore('sessions').get(session.id)
+        if (isStaleSave(stored?.revision, session.revision)) {
+          stale = true
+          return
+        }
         for (const file of files) {
           await tx.objectStore('files').put(file)
         }
@@ -99,11 +126,19 @@ export const saveSession = async (session: Session, files: StoredFile[] = []): P
     })(),
     tx.done,
   ])
+  return { written: !stale, stale }
 }
 
-/** 未打开的会话也可重命名，只读取该会话，原子更新详情和列表。 */
-export const renameSession = async (id: string, title: string): Promise<void> => {
+export type SaveSessionResult = {
+  written: boolean
+  /** 存储里的 revision 更高，本次写入被放弃 */
+  stale: boolean
+}
+
+/** 未打开的会话也可重命名，只读取该会话，原子更新详情和列表；返回新的 revision 供广播 */
+export const renameSession = async (id: string, title: string): Promise<number | null> => {
   const tx = (await getDB()).transaction(['sessions', 'sessionSummaries'], 'readwrite')
+  let revision: number | null = null
   await Promise.all([
     (async () => {
       try {
@@ -111,6 +146,8 @@ export const renameSession = async (id: string, title: string): Promise<void> =>
         const session = await sessions.get(id)
         if (session) {
           session.title = title
+          session.revision = nextRevision(session.revision)
+          revision = session.revision
           await sessions.put(session)
           await tx.objectStore('sessionSummaries').put(storedSummary(session))
         }
@@ -121,6 +158,7 @@ export const renameSession = async (id: string, title: string): Promise<void> =>
     })(),
     tx.done,
   ])
+  return revision
 }
 
 /** 删除会话，仅清理已无会话引用的本地原件；远端文件不删。 */

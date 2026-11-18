@@ -34,6 +34,7 @@ import { Tooltip } from '../base/Tooltip.js'
 import { Markdown } from '../markdown/Markdown.js'
 import { SiteThumbnails } from '../search/SiteLogo.js'
 import { toggleSearchPanel, useSearchPanel } from '../search/searchPanelState.js'
+import { isWebUrl } from '../../utils/url.js'
 import styles from './ReplyArea.module.css'
 import './thinking.markdown.css'
 
@@ -298,10 +299,13 @@ const PageLink = ({ page, failedTip }: { page: PageItem; failedTip?: string }) =
       <Tooltip content={failedTip}>
         <span className={styles.pageText}>{page.title}</span>
       </Tooltip>
-    ) : (
+    ) : isWebUrl(page.url) ? (
       <a className={styles.pageText} href={page.url} target="_blank" rel="noreferrer">
         {page.title}
       </a>
+    ) : (
+      // 非 http(s) 的页面地址只展示标题，不渲染成链接
+      <span className={styles.pageText}>{page.title}</span>
     )}
     <span className={styles.pageIcon}>
       <IconRightUpOutline14 />

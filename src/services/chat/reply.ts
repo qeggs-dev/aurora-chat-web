@@ -1,17 +1,17 @@
 import type {
   AssistantBlockParam,
-  FileBlockParam,
   MessageParam,
   MessageStreamEvent,
   OutputBlockStart,
   TextBlockParam,
   ToolResultBlockParam,
 } from '../api/types.js'
+import { isAbnormalStopReason } from '../api/types.js'
 import { getActiveResolvedPreset, renderPromptTemplate } from '../preset/index.js'
+import { hasRequestContent, toFileBlocks } from './fileBlocks.js'
 import type {
   AssistantMessage,
   ClientToolUsePart,
-  FileAttachment,
   Message,
   ReplyBlock,
   ReplyStatus,
@@ -44,19 +44,8 @@ export const buildSystemPrompt = (): string | undefined => {
 
 /**
  * 文件按 Files API 的 file_id（附件的 serverId）引用：图片用 image 块，其余用 document 块。
- * 发送前 streamReply 会先补齐 serverId；仍为 null 的是本地没有原件的附件，不进入请求。
+ * 发送前 streamReply 会先补齐 serverId；占位 id 与仍为 null 的附件都不进入请求（见 fileBlocks.ts）。
  */
-const toFileBlocks = (files: FileAttachment[]): FileBlockParam[] =>
-  files.flatMap(({ serverId, isImage }) =>
-    serverId
-      ? [
-          {
-            type: isImage ? 'image' : 'document',
-            source: { type: 'file', file_id: serverId },
-          },
-        ]
-      : []
-  )
 
 /** 工具参数流式 JSON 解析：未收完 / 非法时返回 undefined，由调用方保留原值 */
 const parseToolInput = (inputJson: string | undefined): unknown => {
@@ -292,12 +281,14 @@ const hasUnpairedToolUse = (reply: AssistantMessage): boolean => {
 
 /**
  * 已结束或停止且有回答文本的回复才放进上下文；被安全拒绝的轮次不回传。
+ * 异常结束（incomplete：流内错误 / 未知 incomplete 原因）的内容可能不完整，同样不回传。
  * 服务端模板提示不进入上下文。
  */
 const isUsableReply = (message: Message): message is AssistantMessage =>
   message.role === 'assistant' &&
   (message.status === 'done' || message.status === 'stopped') &&
   message.stopReason !== 'refusal' &&
+  !isAbnormalStopReason(message.stopReason) &&
   !message.blocks.some((block) => block.type === 'text' && block.isTemplate) &&
   !hasUnpairedToolUse(message) &&
   getReplyText(message) !== ''
@@ -506,15 +497,18 @@ export const toRequestMessages = (
     if (covered.has(user.id) || covered.has(reply.id)) {
       continue
     }
-    // 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略。
-    if (!user.content && toFileBlocks(user.files).length === 0) {
+    // 历史提问没有文字、附件也都没有真实 file_id（占位 / 未补传 / 没有原件）时，提问为空，连同回答一起省略。
+    if (!hasRequestContent(user.content, user.files)) {
       continue
     }
     appendReminder(reply.latestReminder)
     messages.push(toUserParam(user), ...toAssistantMessages(reply))
   }
   appendReminder(latestReminder)
-  messages.push(toUserParam(question))
+  // 本轮提问同样可能只剩占位附件：跳过空的 user 消息，避免服务端收到空 content（400）
+  if (hasRequestContent(question.content, question.files)) {
+    messages.push(toUserParam(question))
+  }
   if (prefix?.prefix) {
     const assistant = toAssistantParam(prefix, true, thinking)
     // 没有非空白正文或有效思考时直接重发原问题，避免服务端拒绝空 Prefill。

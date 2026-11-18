@@ -98,13 +98,29 @@ test('recordUsage：存储不可用时仍返回记录并累加内存统计', asy
   assert.ok(state.totals.updatedAt > 0)
 })
 
-test('recordUsage：同 messageId + 同 totalTokens 视为重复，不新增记录也不累加', async () => {
-  const input = usageInput()
+test('recordUsage：同一 requestId 视为重复，不新增记录也不累加', async () => {
+  const input = { ...usageInput(), requestId: 'req-stream-1' }
   const first = await store.recordUsage(input)
   const totalsBefore = store.getUsageState().totals
   const second = await store.recordUsage(input)
   assert.equal(second, first)
   assert.deepEqual(store.getUsageState().totals, totalsBefore)
+})
+
+test('recordUsage：messageId + token 相同但 requestId 不同时分别记账（工具循环 / 重试）', async () => {
+  const base = usageInput()
+  const totalsBefore = store.getUsageState().totals
+  const first = await store.recordUsage({ ...base, requestId: 'req-a' })
+  const second = await store.recordUsage({ ...base, requestId: 'req-b' })
+  assert.notEqual(second, first)
+  assert.equal(store.getUsageState().totals.requests, totalsBefore.requests + 2)
+})
+
+test('recordUsage：没有 requestId 时不再按 messageId + token 去重', async () => {
+  const input = usageInput()
+  const first = await store.recordUsage(input)
+  const second = await store.recordUsage(input)
+  assert.notEqual(second, first)
 })
 
 test('recordUsage：同 messageId 但 token 总数不同算另一条记录', async () => {

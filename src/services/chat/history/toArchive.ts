@@ -1,4 +1,5 @@
 import type { ServerToolUseBlock } from '../../api/types.js'
+import { isAbnormalStopReason } from '../../api/types.js'
 import { getVisibleMessages, normalizeSession } from '../branches.js'
 import { describeReply } from '../describe.js'
 import type { AssistantMessage, Message, ReplyBlock, Session, UserMessage } from '../types.js'
@@ -171,7 +172,7 @@ const assistantFragments = (message: AssistantMessage): Fragment[] => {
   const hasTemplate = blocks.some((block) => block.type === 'text' && block.isTemplate)
   if (
     (message.status === 'error' && message.error) ||
-    (!hasTemplate && message.stopReason === 'refusal')
+    (!hasTemplate && (message.stopReason === 'refusal' || isAbnormalStopReason(message.stopReason)))
   ) {
     const notice = describeReply(message)
     if (notice) {
@@ -187,7 +188,10 @@ const replyStatus = ({ status, stopReason }: AssistantMessage): ChatMessageStatu
   }
   switch (status) {
     case 'done':
-      return stopReason === 'max_tokens' ? 'INCOMPLETE' : 'FINISHED'
+      // 异常结束（incomplete）与达到输出上限一样按「不完整」归档，不能记为正常完成
+      return stopReason === 'max_tokens' || isAbnormalStopReason(stopReason)
+        ? 'INCOMPLETE'
+        : 'FINISHED'
     case 'stopped':
       return 'INCOMPLETE'
     case 'error':
