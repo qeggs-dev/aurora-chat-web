@@ -22,6 +22,8 @@ export const en = {
     'Aurora Chat is a community-maintained client: its interface and parts of the code come from the open-source chat-demo project, with substantial modifications and additions (style packs, API presets, usage stats, memory). It is not a DeepSeek product and is not affiliated with or endorsed by DeepSeek. Names, interface and trademarks belong to their respective owners.',
   aboutUpstreamLabel: 'Upstream project',
   aboutOfficialDemoLabel: 'Official live demo',
+  aboutMaintainerLabel: 'Maintainer',
+  aboutMaintainerNote: 'Aurora Chat is maintained by Qeggs; issues and suggestions are welcome on GitHub.',
   aboutOfficialDemoNote:
     'The official online build of chat-demo, for comparison only. This project is a community client and is unrelated to it.',
   aboutLicenseLabel: 'Open-source license (MIT)',

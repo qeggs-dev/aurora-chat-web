@@ -19,6 +19,8 @@ export const zh = {
     'Aurora Chat 是社区维护的客户端：界面与部分代码基于开源项目 chat-demo，并在此基础上做了大量修改与扩展（样式包、API 预设、用量统计、记忆等）。它不是 DeepSeek 官方产品，也未获得 DeepSeek 的授权或背书。名称、界面与商标归各自权利人所有。',
   aboutUpstreamLabel: '上游项目',
   aboutOfficialDemoLabel: '官方在线体验',
+  aboutMaintainerLabel: '维护者',
+  aboutMaintainerNote: 'Aurora Chat 由 Qeggs 维护，问题与建议欢迎在 GitHub 上反馈。',
   aboutOfficialDemoNote:
     '上游官方 demo（chat-demo 的在线版本），仅供对照；本项目是社区客户端，与它无关。',
   aboutLicenseLabel: '开源许可（MIT）',

@@ -1,7 +1,8 @@
 {
   "name": "aurora-chat-web",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Aurora Chat web front-end (fork of deepseek-ai/chat-demo)",
+  "author": "Qeggs (https://github.com/qeggs-dev)",
   "license": "MIT",
   "private": true,
   "repository": {
