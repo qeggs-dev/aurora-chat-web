@@ -9,6 +9,8 @@
   padding: 6px 12px 0;
   border-right: 1px solid var(--dsw-alias-border-l1);
   background-color: var(--dsw-specific-sidebar-fill);
+  /* 整体进出：只动 transform；方向从左到右进入、从右到左退出 */
+  transition: transform var(--motion-dur-panel) var(--motion-ease-out);
 
   /* 样式包侧边栏背景图：标题、新会话、列表与设置都在它之上 */
   &::before {
@@ -131,11 +133,38 @@
 }
 
 .list {
+  position: relative;
   height: 100%;
   margin: 0 -2px;
   padding: 0 2px;
   overflow-y: auto;
   scrollbar-color: var(--scroll-color) transparent;
+}
+
+/* 进入起点 / 退出终点：整块滑到左边缘外；reduced-motion 时位移为 0（瞬时出现） */
+.siderStart,
+.siderExit {
+  transform: translateX(calc(-1 * var(--motion-panel-shift)));
+}
+
+/* 选中高亮：一块背景在列表项下面滑动，位置由 JS 量出、只改 transform */
+.listHighlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: 12px;
+  background-color: var(--dsw-specific-sidebar-nav-item-active-accent);
+  pointer-events: none;
+  will-change: transform;
+  transition:
+    transform var(--motion-dur-highlight) var(--motion-ease-jitter),
+    opacity var(--motion-dur-list-in) var(--motion-ease-both);
+}
+
+/* 列表逐项退出时高亮一起淡出 */
+.listHighlightExit {
+  opacity: 0;
 }
 
 .section {
@@ -175,6 +204,7 @@
 }
 
 .settings {
+  position: relative;
   display: flex;
   align-items: center;
   box-sizing: border-box;
@@ -259,6 +289,14 @@
   bottom: 0;
   left: 0;
   z-index: 800;
+  /* 抽屉整体从左到右进入、从右到左退出 */
+  transition: transform var(--motion-dur-panel) var(--motion-ease-out);
+}
+
+/* 抽屉进入起点 / 退出终点：滑到屏幕左边缘外 */
+.drawerStart,
+.drawerExit {
+  transform: translateX(calc(-1 * var(--motion-panel-shift)));
 }
 
 /* 编辑模式工具栏是 fixed 覆盖层：抽屉整体下移，避免顶部标题被遮住 */
@@ -271,6 +309,11 @@
   position: absolute;
   inset: 0;
   z-index: 799;
+}
+
+/* 退出中遮罩不再响应点击，避免动画中途重复触发 */
+.drawerMaskExit {
+  pointer-events: none;
 }
 
 .mobile {
@@ -313,4 +356,21 @@
     font-size: 16px;
     line-height: 22px;
   }
+
+  .listHighlight {
+    border-radius: 16px;
+  }
+}
+
+/* 设置入口的更新小红点（有新版本且未点「稍后」） */
+.updateDot {
+  position: absolute;
+  top: 10px;
+  left: 26px;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--dsw-alias-bg-base, #fff);
+  border-radius: 50%;
+  background-color: var(--dsw-alias-state-error-primary);
+  pointer-events: none;
 }

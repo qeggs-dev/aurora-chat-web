@@ -4,34 +4,118 @@
   height: 500px;
   max-height: calc(100vh - 32px);
   padding: 19px 24px 22px;
+  /* PC 端从触发按钮放大：transform-origin 与起始缩放由 JS 写入变量 */
+  transform-origin: var(--motion-dialog-origin-x, 50%) var(--motion-dialog-origin-y, 50%);
 }
 
 .dialogMain {
   display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
   color: var(--dsw-alias-label-primary);
 }
 
+/* ---- 设置弹窗进出场 ---- */
+
+/* 起点（首次挂载的第一帧）/ 退出终点：缩回触发按钮；没有按钮 rect 时轻微放大 */
+.dialogStart,
+.dialogExit {
+  opacity: 0.55;
+  transform: scale(
+    var(--motion-dialog-scale-x, var(--motion-dialog-scale-min)),
+    var(--motion-dialog-scale-y, var(--motion-dialog-scale-min))
+  );
+}
+
+.dialogStart {
+  transition: none;
+}
+
+.dialogOpen,
+.dialogExit {
+  transition:
+    transform var(--motion-dur-dialog) var(--motion-ease-out),
+    opacity var(--motion-dur-dialog) var(--motion-ease-out);
+}
+
+.dialogOpen {
+  opacity: 1;
+  transform: none;
+}
+
+.dialogExit {
+  pointer-events: none;
+}
+
+/* 遮罩淡入淡出：只动 opacity */
+.overlayEnter {
+  animation: settingsOverlayEnter var(--motion-dur-dialog) var(--motion-ease-both) both;
+}
+
+.overlayExit {
+  animation: settingsOverlayExit var(--motion-dur-dialog) var(--motion-ease-both) both;
+}
+
+@keyframes settingsOverlayEnter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes settingsOverlayExit {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+/* 顶部标签栏：PC 与移动端一致，横向排布 */
 .navigation {
+  position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   flex-shrink: 0;
   gap: 4px;
-  width: 172px;
-  margin: 6px 12px 0 -12px;
-  padding-top: 4px;
+  margin: 2px -4px 10px;
+  padding: 4px;
+  border-radius: 14px;
+}
+
+/* 标签选中高亮：固定宽度元素 + translate/scaleX 滑到选中标签（只动 transform） */
+.navHighlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 100px;
+  border-radius: 12px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  pointer-events: none;
+  transform-origin: left center;
+  will-change: transform;
+  transition: transform var(--motion-dur-highlight) var(--motion-ease-jitter);
 }
 
 .navItem {
+  position: relative;
+  z-index: 1;
   display: flex;
+  flex: 1 1 0;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 6px;
   box-sizing: border-box;
-  width: calc(100% - 8px);
+  min-width: 0;
   min-height: 40px;
-  margin: 0 4px;
-  padding: 9px 10px 9px 8px;
+  padding: 9px 10px;
   border: none;
   border-radius: 12px;
   background-color: transparent;
@@ -39,7 +123,8 @@
   font: inherit;
   font-size: 14px;
   line-height: 22px;
-  text-align: left;
+  text-align: center;
+  white-space: nowrap;
   cursor: pointer;
   user-select: none;
   outline: none;
@@ -50,14 +135,18 @@
     flex-shrink: 0;
   }
 
-  &:hover,
-  &.navItemActive {
+  &:hover {
     background-color: var(--dsw-alias-interactive-bg-hover);
   }
 
   &:focus-visible {
     box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
   }
+}
+
+/* 选中态背景由 .navHighlight 滑动块提供，这里只保留字重语义 */
+.navItemActive {
+  font-weight: 500;
 }
 
 .content {
@@ -69,6 +158,71 @@
   margin-right: -24px;
   padding: 0 24px;
   overflow-y: auto;
+}
+
+/* 切标签换页：旧内容向一侧侧移退出，新内容从另一侧侧移进入（只动 transform/opacity） */
+.contentOutForward {
+  animation: contentOutForward var(--motion-dur-content-out) var(--motion-ease-in) both;
+}
+
+.contentOutBackward {
+  animation: contentOutBackward var(--motion-dur-content-out) var(--motion-ease-in) both;
+}
+
+.contentInForward {
+  animation: contentInForward var(--motion-dur-content-in) var(--motion-ease-out) both;
+}
+
+.contentInBackward {
+  animation: contentInBackward var(--motion-dur-content-in) var(--motion-ease-out) both;
+}
+
+@keyframes contentOutForward {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+
+  to {
+    opacity: 0.25;
+    transform: translateX(calc(-1 * var(--motion-shift-content)));
+  }
+}
+
+@keyframes contentOutBackward {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+
+  to {
+    opacity: 0.25;
+    transform: translateX(var(--motion-shift-content));
+  }
+}
+
+@keyframes contentInForward {
+  from {
+    opacity: 0.25;
+    transform: translateX(var(--motion-shift-content));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes contentInBackward {
+  from {
+    opacity: 0.25;
+    transform: translateX(calc(-1 * var(--motion-shift-content)));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .cell {
@@ -350,33 +504,22 @@
     border-radius: 24px 24px 0 0;
   }
 
-  .dialogMain {
-    flex-direction: column;
+  /* 移动端：从底部向上进入，向下退出（reduced-motion 时位移归零） */
+  .dialogStart,
+  .dialogExit {
+    transform: translateY(var(--motion-panel-shift));
   }
 
   .navigation {
-    flex-direction: row;
-    width: auto;
-    margin: 6px -4px;
-    padding: 4px 0;
+    margin: 2px -4px 8px;
+    padding: 4px;
     overflow-x: auto;
   }
 
   .navItem {
     flex: 1 0 auto;
-    justify-content: center;
     width: auto;
     min-width: 108px;
-    margin: 0;
-    white-space: nowrap;
-
-    &:first-child {
-      margin-left: 4px;
-    }
-
-    &:last-child {
-      margin-right: 4px;
-    }
   }
 
   .content {
@@ -821,4 +964,14 @@
   .stylePackActions > button {
     min-height: 44px;
   }
+}
+
+/* 侧边导航上的更新小红点：只在「关于」里有新版本时出现 */
+.navBadge {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background-color: var(--dsw-alias-state-error-primary);
 }

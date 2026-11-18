@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { memo, useState } from 'react'
+import { memo, useState, type CSSProperties } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconEditOutline16, IconEllipsisOutline16, IconTrashOutline16 } from '../base/icons.js'
 import { PackIcon } from '../base/PackIcon.js'
@@ -9,20 +9,36 @@ import type { SessionSummary } from '../../services/chat/types.js'
 import { IconButton } from '../base/IconButton.js'
 import { Menu } from '../base/Menu.js'
 import { closeMobileSider } from './mobileSiderState.js'
+import type { StaggeredItem } from '../motion/useStaggeredList.js'
 import styles from './SessionItem.module.css'
 
 export const SessionItem = memo(function SessionItem({
   session,
   active,
+  motion,
   onDelete,
+  onSelect,
 }: {
   session: SessionSummary
   active: boolean
+  /** 进入 / 退出时的逐项动效（只对可视区项传入，屏幕外的不参与） */
+  motion?: StaggeredItem
   onDelete: () => void
+  /** 选中回调：移动端由侧边栏按「高亮 1/3」编排收起抽屉 */
+  onSelect?: () => void
 }) {
   const t = useTranslate()
   const [editing, setEditing] = useState(false)
   const displayTitle = session.title || t('untitledChat')
+  // 动效只挂 class + animation-delay，位移/透明度全在 CSS keyframes 里
+  const motionClass =
+    motion === undefined
+      ? undefined
+      : motion.phase === 'enter'
+        ? styles.itemEnter
+        : styles.itemExit
+  const motionStyle: CSSProperties | undefined =
+    motion === undefined ? undefined : { animationDelay: `${motion.delayMs}ms` }
 
   if (editing) {
     const finish = (title: string) => {
@@ -51,11 +67,17 @@ export const SessionItem = memo(function SessionItem({
 
   return (
     <div
-      className={clsx(styles.item, active && styles.active)}
+      className={clsx(styles.item, active && styles.active, motionClass)}
+      style={motionStyle}
+      data-motion-item={session.id}
       data-style-slot={active ? STYLE_SLOTS.bgSelectedSession : STYLE_SLOTS.bgNormalSession}
       onClick={() => {
         selectSession(session.id)
-        closeMobileSider()
+        if (onSelect) {
+          onSelect()
+        } else {
+          closeMobileSider()
+        }
       }}
     >
       <div className={styles.title}>{displayTitle}</div>

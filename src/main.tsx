@@ -4,6 +4,7 @@ import { ErrorBoundary } from './components/base/ErrorBoundary.js'
 import { setupTheme } from './app/theme.js'
 import { ensureKatex } from './services/markdown/katex.js'
 import './app/theme.css'
+import './app/motion.css'
 import './app/global.css'
 
 ensureKatex()

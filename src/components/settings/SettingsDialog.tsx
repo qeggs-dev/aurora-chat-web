@@ -1,10 +1,12 @@
 import clsx from 'clsx'
 import {
-  useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type KeyboardEvent,
   type ReactNode,
 } from 'react'
 import {
@@ -27,6 +29,7 @@ import { useChatStore } from '../../services/chat/store.js'
 import { regionCodes, getRegionName, provinces } from '../../services/location.js'
 import {
   isChineseBrowser,
+  setAutoCheckUpdates,
   setCompatibilityMode,
   setLocale,
   setLocation,
@@ -36,8 +39,7 @@ import {
   type ThemePreference,
 } from '../../services/settings.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
-import logoDark from '../../assets/brand/aurora-512.png'
-import logoLight from '../../assets/brand/aurora-light-512.png'
+import { shouldShowUpdateBadge, useUpdateStore } from '../../services/update/store.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { PackIcon } from '../base/PackIcon.js'
@@ -54,17 +56,38 @@ import {
 import { PresetIcon, PresetSection } from './PresetSection.js'
 import { StyleIcon, StyleSection } from './StyleSection.js'
 import { UsageIcon, UsageSection } from './UsageSection.js'
+import { AboutSection } from './AboutSection.js'
+import { usePrefersReducedMotion } from '../motion/usePrefersReducedMotion.js'
+import { usePresence, type PresenceStage } from '../motion/usePresence.js'
+import { useTimers } from '../motion/useTimers.js'
+import { useTabHighlight } from '../motion/useTabHighlight.js'
+import {
+  dialogExpand,
+  dialogExitMs,
+  resolveMotionTokens,
+  swipeDirection,
+  type DialogExpand,
+  type MotionTokens,
+  type SwipeDirection,
+} from '../motion/motionMath.js'
 import styles from './Settings.module.css'
 
 /**
  * 设置弹窗：分「通用设置」（主题、语言、兼容模式、朗读音色、位置）、「数据管理」（API Key、导入、导出、删除）、
  * 「用量统计」（请求与 token 统计、最近请求、余额查询、清空统计）、「样式」（导入、启用、删除自定义样式包）、
  * 「Preset」（导入、手写 JSON 编辑、启用、删除 API 配置预设）与「关于」（非官方声明与上游许可）。
- * 桌面端为居中弹窗、左侧导航；移动端为底部弹层、导航横排在内容上方
+ * 桌面端与移动端都是顶部标签栏；桌面端弹窗从触发按钮放大 / 缩回按钮，移动端从底部上滑进入 / 下滑退出。
  */
 export const SettingsDialog = () => {
   const open = useSettingsDialog((state) => state.open)
-  return open ? <SettingsContent /> : null
+  const reduced = usePrefersReducedMotion()
+  const tokens = useMemo(() => resolveMotionTokens(reduced), [reduced])
+  // 关闭时保持挂载到缩小动画播完，避免弹窗直接消失
+  const { mounted, stage } = usePresence(open, dialogExitMs(tokens))
+  if (!mounted) {
+    return null
+  }
+  return <SettingsContent stage={stage} tokens={tokens} reduced={reduced} />
 }
 
 const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode }[] = [
@@ -132,11 +155,74 @@ const settingBackgrounds: Record<SettingsSection, CSSProperties> = {
   about: settingBackground('setting-about'),
 }
 
-const SettingsContent = () => {
+/** 标签栏顺序：切标签时按顺序判断内容区侧移方向（Index 越大越靠右） */
+const sectionOrder = sections.map((item) => item.value)
+
+const sectionIndexOf = (value: SettingsSection): number =>
+  Math.max(0, sectionOrder.indexOf(value))
+
+/** 内容区换页：先播旧内容侧移退出，再换内容播新内容侧移进入 */
+type ContentMotion = { phase: 'out' | 'in'; direction: SwipeDirection }
+
+const contentMotionClass = (motion: ContentMotion): string => {
+  if (motion.phase === 'out') {
+    return motion.direction === 'forward' ? styles.contentOutForward : styles.contentOutBackward
+  }
+  return motion.direction === 'forward' ? styles.contentInForward : styles.contentInBackward
+}
+
+const SettingsContent = ({
+  stage,
+  tokens,
+  reduced,
+}: {
+  stage: PresenceStage
+  tokens: MotionTokens
+  reduced: boolean
+}) => {
   const t = useTranslate()
   const isMobile = useIsMobile()
-  // 打开时按调用方指定的分组选中，之后在弹窗内切换
-  const [section, setSection] = useState(() => useSettingsDialog.getState().section)
+  // 「关于」里有新版本时在顶部标签栏亮小红点
+  const showAboutBadge = useUpdateStore(shouldShowUpdateBadge)
+  // selected：标签栏立即响应（高亮滑过去）；rendered：内容区等旧内容侧移退完再换
+  const [selected, setSelected] = useState(() => useSettingsDialog.getState().section)
+  const [rendered, setRendered] = useState(() => useSettingsDialog.getState().section)
+  const [contentMotion, setContentMotion] = useState<ContentMotion | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const navRef = useRef<HTMLDivElement>(null)
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+  // PC 端「从按钮放大」的起点：按钮中心相对弹窗的位置 + 两轴起始缩放
+  const [expand, setExpand] = useState<DialogExpand | null>(null)
+  const { schedule, clear } = useTimers()
+  const navHighlight = useTabHighlight({
+    navRef,
+    activeIndex: sectionIndexOf(selected),
+    revision: selected === rendered ? 0 : 1,
+  })
+
+  // 弹窗挂载后、首帧绘制前量出最终位置：拿触发按钮的 rect 计算 transform-origin 与起始缩放
+  useLayoutEffect(() => {
+    if (stage !== 'start' || isMobile || reduced) {
+      return
+    }
+    const dialog = dialogRef.current
+    if (!dialog) {
+      return
+    }
+    // 起点 class 自带 scale，直接量会得到被缩小的矩形；先临时清掉 transform 拿真实布局矩形
+    const previousTransform = dialog.style.transform
+    dialog.style.transform = 'none'
+    const rect = dialog.getBoundingClientRect()
+    dialog.style.transform = previousTransform
+    setExpand(
+      dialogExpand(
+        { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+        useSettingsDialog.getState().origin,
+        tokens
+      )
+    )
+  }, [stage, isMobile, reduced, tokens])
+
   // 预设草稿在「预设」分组外仍然保留；离开分组 / 关闭弹窗时若有未保存修改先确认
   const dirtyPresetDrafts = useSyncExternalStore(
     subscribePresetDrafts,
@@ -170,16 +256,40 @@ const SettingsContent = () => {
     closeNow()
   }
 
+  /**
+   * 切分组：标签栏立即选中新项（高亮滑过去），内容区先侧移退出再换新内容侧移进入。
+   * 快速重复切换时清掉上一次的定时器，取最新一次目标。
+   */
+  const switchSection = (next: SettingsSection) => {
+    if (next === rendered) {
+      setSelected(next)
+      return
+    }
+    setSelected(next)
+    if (reduced) {
+      setRendered(next)
+      return
+    }
+    const direction = swipeDirection(sectionIndexOf(rendered), sectionIndexOf(next))
+    clear()
+    setContentMotion({ phase: 'out', direction })
+    schedule(() => {
+      setRendered(next)
+      setContentMotion({ phase: 'in', direction })
+      schedule(() => setContentMotion(null), tokens.contentInMs + 40)
+    }, tokens.contentOutMs)
+  }
+
   const requestSection = (next: SettingsSection) => {
-    if (next === section) {
+    if (next === selected) {
       return
     }
     // 离开「预设」分组时才需要确认；其它分组之间切换不受影响
-    if (section === 'preset' && dirtyPresetDrafts) {
+    if (selected === 'preset' && dirtyPresetDrafts) {
       setDiscardPrompt({ kind: 'section', section: next })
       return
     }
-    setSection(next)
+    switchSection(next)
   }
 
   const confirmDiscard = () => {
@@ -192,61 +302,144 @@ const SettingsContent = () => {
     if (prompt.kind === 'close') {
       closeSettings()
     } else {
-      setSection(prompt.section)
+      switchSection(prompt.section)
     }
   }
+
+  /** 标签栏键盘左右切换（Home / End 跳到首尾），焦点跟随选中标签 */
+  const onTablistKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const current = sectionIndexOf(selected)
+    let next: number
+    switch (event.key) {
+      case 'ArrowRight':
+        next = (current + 1) % sections.length
+        break
+      case 'ArrowLeft':
+        next = (current - 1 + sections.length) % sections.length
+        break
+      case 'Home':
+        next = 0
+        break
+      case 'End':
+        next = sections.length - 1
+        break
+      default:
+        return
+    }
+    const target = sections[next]
+    if (!target) {
+      return
+    }
+    event.preventDefault()
+    requestSection(target.value)
+    tabRefs.current[next]?.focus()
+  }
+
+  // 从按钮放大的变量只在 PC 端、非 reduced-motion 时写入；移动端走 translateY
+  const expandStyle: CSSProperties =
+    expand && !reduced && !isMobile
+      ? ({
+          '--motion-dialog-origin-x': `${expand.originX}px`,
+          '--motion-dialog-origin-y': `${expand.originY}px`,
+          '--motion-dialog-scale-x': String(expand.scaleX),
+          '--motion-dialog-scale-y': String(expand.scaleY),
+        } as CSSProperties)
+      : {}
 
   return (
     <>
       <Modal
         title={t('settings')}
         closable
-        className={styles.dialog}
+        className={clsx(
+          styles.dialog,
+          stage === 'start' && styles.dialogStart,
+          stage === 'open' && styles.dialogOpen,
+          stage === 'exit' && styles.dialogExit
+        )}
         mainClassName={styles.dialogMain}
-        style={settingBackgrounds[section]}
+        contentRef={dialogRef}
+        overlayClassName={clsx(
+          stage === 'start' && styles.overlayEnter,
+          stage === 'exit' && styles.overlayExit
+        )}
+        style={{ ...settingBackgrounds[rendered], ...expandStyle }}
         onClose={requestClose}
       >
-        <div role="tablist" className={styles.navigation}>
-          {sections.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              role="tab"
-              aria-selected={section === item.value}
-              className={clsx(styles.navItem, section === item.value && styles.navItemActive)}
-              onClick={() => requestSection(item.value)}
-            >
-              {item.icon}
-              {t(item.label)}
-            </button>
-          ))}
+        <div
+          role="tablist"
+          aria-label={t('settings')}
+          className={styles.navigation}
+          ref={navRef}
+          onKeyDown={onTablistKeyDown}
+        >
+          {navHighlight ? (
+            <div
+              aria-hidden="true"
+              data-motion-highlight="tabs"
+              className={styles.navHighlight}
+              style={{
+                transform: navHighlight.transform,
+                height: navHighlight.height,
+                borderRadius: navHighlight.borderRadius,
+              }}
+            />
+          ) : null}
+          {sections.map((item, index) => {
+            const active = selected === item.value
+            return (
+              <button
+                key={item.value}
+                ref={(element) => {
+                  tabRefs.current[index] = element
+                }}
+                type="button"
+                role="tab"
+                id={`settings-tab-${item.value}`}
+                aria-selected={active}
+                aria-controls={`settings-panel-${item.value}`}
+                tabIndex={active ? 0 : -1}
+                className={clsx(styles.navItem, active && styles.navItemActive)}
+                onClick={() => requestSection(item.value)}
+              >
+                {item.icon}
+                {t(item.label)}
+                {item.value === 'about' && showAboutBadge ? (
+                  <span className={styles.navBadge} aria-hidden="true" />
+                ) : null}
+              </button>
+            )
+          })}
         </div>
         <div
           role="tabpanel"
-          className={styles.content}
+          id={`settings-panel-${rendered}`}
+          aria-labelledby={`settings-tab-${rendered}`}
+          className={clsx(styles.content, contentMotion && contentMotionClass(contentMotion))}
           data-style-slot={
-            section === 'data'
+            rendered === 'data'
               ? STYLE_SLOTS.bgSettingDatas
-              : section === 'about'
+              : rendered === 'about'
                 ? STYLE_SLOTS.bgSettingAbout
                 : STYLE_SLOTS.bgSettingGeneric
           }
         >
-          {section === 'general' ? (
+          {rendered === 'general' ? (
             <>
               <ThemeSetting />
               <LocaleSetting />
               <CompatibilitySetting />
+              <AutoCheckUpdatesSetting />
               <TtsVoiceSetting />
               <LocationSetting />
             </>
-          ) : section === 'usage' ? (
+          ) : rendered === 'usage' ? (
             <UsageSection onOpenData={() => requestSection('data')} />
-          ) : section === 'style' ? (
+          ) : rendered === 'style' ? (
             <StyleSection />
-          ) : section === 'preset' ? (
+          ) : rendered === 'preset' ? (
             <PresetSection />
-          ) : section === 'about' ? (
+          ) : rendered === 'about' ? (
             <AboutSection />
           ) : (
             <>
@@ -497,6 +690,21 @@ const CompatibilitySetting = () => {
       description={t('settingsCompatibilityModeDescription')}
       status={null}
       action={<Switch checked={compatibilityMode} label={label} onChange={setCompatibilityMode} />}
+    />
+  )
+}
+
+/** 启动时自动检查更新：默认开启，只影响启动时的一次检查，结果缓存 24h */
+const AutoCheckUpdatesSetting = () => {
+  const t = useTranslate()
+  const autoCheckUpdates = useSettings((state) => state.autoCheckUpdates)
+  const label = t('settingsAutoCheckUpdates')
+  return (
+    <SettingCell
+      label={label}
+      description={t('settingsAutoCheckUpdatesDescription')}
+      status={null}
+      action={<Switch checked={autoCheckUpdates} label={label} onChange={setAutoCheckUpdates} />}
     />
   )
 }
@@ -793,123 +1001,3 @@ function InfoIcon() {
   )
 }
 
-const UPSTREAM_URL = 'https://github.com/deepseek-ai/chat-demo'
-const OFFICIAL_DEMO_URL = 'https://cdn.deepseek.com/chat-demo'
-const OFFICIAL_DEMO_LABEL = 'cdn.deepseek.com/chat-demo'
-const MAINTAINER_URL = 'https://github.com/qeggs-dev'
-const MAINTAINER_LABEL = 'github.com/qeggs-dev'
-
-const UPSTREAM_REPO_LABEL = 'github.com/deepseek-ai/chat-demo'
-
-const PROJECT_LICENSE = "MIT License\r\n\r\nCopyright (c) 2026 Qeggs (https://github.com/qeggs-dev) and Aurora Chat contributors\r\n\r\nPermission is hereby granted, free of charge, to any person obtaining a copy\r\nof this software and associated documentation files (the \"Software\"), to deal\r\nin the Software without restriction, including without limitation the rights\r\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\r\ncopies of the Software, and to permit persons to whom the Software is\r\nfurnished to do so, subject to the following conditions:\r\n\r\nThe above copyright notice and this permission notice shall be included in all\r\ncopies or substantial portions of the Software.\r\n\r\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\r\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\r\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\r\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\r\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\r\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\r\nSOFTWARE."
-
-const UPSTREAM_LICENSE = `MIT License
-
-Copyright (c) 2026 DeepSeek
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.`
-
-/** 当前实际生效的主题（跟随系统时读取 prefers-color-scheme） */
-const useResolvedTheme = (): 'light' | 'dark' => {
-  const preference = useSettings((state) => state.themePreference)
-  const [osDark, setOsDark] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
-  )
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-color-scheme: dark)')
-    const handler = (event: MediaQueryListEvent) => setOsDark(event.matches)
-    query.addEventListener('change', handler)
-    return () => query.removeEventListener('change', handler)
-  }, [])
-  return preference === 'system' ? (osDark ? 'dark' : 'light') : preference
-}
-
-const appVersion = () =>
-  document.querySelector('meta[name="application-version"]')?.getAttribute('content') ?? ''
-
-const AboutSection = () => {
-  const t = useTranslate()
-  const version = appVersion()
-  const theme = useResolvedTheme()
-  return (
-    <div className={styles.about}>
-      <div className={styles.aboutHeader}>
-        <img
-          className={styles.aboutLogo}
-          src={theme === 'dark' ? logoDark : logoLight}
-          alt=""
-          width={44}
-          height={44}
-        />
-        <span className={styles.aboutName}>{t('appName')}</span>
-        <span className={styles.aboutBadge}>{t('aboutBadge')}</span>
-        {version ? (
-          <span className={styles.aboutVersion}>
-            {t('aboutVersionLabel')} {version}
-          </span>
-        ) : null}
-      </div>
-      <div className={styles.aboutBlock}>
-        <div className={styles.aboutLabel}>{t('aboutDisclaimerTitle')}</div>
-        <p className={styles.aboutText}>{t('aboutDisclaimer')}</p>
-      </div>
-      <div className={styles.aboutBlock}>
-        <div className={styles.aboutLabel}>{t('aboutUpstreamLabel')}</div>
-        <a className={styles.aboutLink} href={UPSTREAM_URL} target="_blank" rel="noreferrer noopener">
-          {UPSTREAM_REPO_LABEL}
-        </a>
-      </div>
-      <div className={styles.aboutBlock}>
-        <div className={styles.aboutLabel}>{t('aboutOfficialDemoLabel')}</div>
-        <a
-          className={styles.aboutLink}
-          href={OFFICIAL_DEMO_URL}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          {OFFICIAL_DEMO_LABEL}
-        </a>
-        <p className={styles.aboutText}>{t('aboutOfficialDemoNote')}</p>
-      </div>
-      <div className={styles.aboutBlock}>
-        <div className={styles.aboutLabel}>{t('aboutMaintainerLabel')}</div>
-        <a className={styles.aboutLink} href={MAINTAINER_URL} target="_blank" rel="noreferrer noopener">
-          {MAINTAINER_LABEL}
-        </a>
-        <p className={styles.aboutText}>{t('aboutMaintainerNote')}</p>
-      </div>
-      <div className={styles.aboutBlock}>
-        <div className={styles.aboutLabel}>{t('aboutLicenseLabel')}</div>
-        <pre className={styles.aboutLicense}>{PROJECT_LICENSE}</pre>
-      </div>
-      <div className={styles.aboutBlock}>
-        <div className={styles.aboutLabel}>{t('aboutUpstreamLicenseLabel')}</div>
-        <pre className={styles.aboutLicense}>{UPSTREAM_LICENSE}</pre>
-      </div>
-      <div className={styles.aboutBlock}>
-        <div className={styles.aboutLabel}>{t('aboutIconsLabel')}</div>
-        <p className={styles.aboutText}>{t('aboutIconsText')}</p>
-      </div>
-      <div className={styles.aboutBlock}>
-        <div className={styles.aboutLabel}>{t('aboutThirdPartyLabel')}</div>
-        <p className={styles.aboutText}>{t('aboutThirdPartyText')}</p>
-      </div>
-    </div>
-  )
-}

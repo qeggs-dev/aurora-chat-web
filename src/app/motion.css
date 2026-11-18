@@ -1,0 +1,72 @@
+/*
+ * 转场动效 tokens：时长 / 缓动 / stagger / 位移集中在这里，组件只引用变量。
+ *
+ * 原则：
+ * - 只动 transform / opacity，不动 width / height / top / left 等布局属性；
+ * - stagger 的「可视项数」由 JS 量出（见 components/motion/motionMath.ts），长列表不会全量动画；
+ * - prefers-reduced-motion: reduce 时全部降级：位移归零、stagger 归零，只剩极短淡入。
+ *
+ * JS 侧同一套数值在 src/components/motion/motionMath.ts，改这里时两边一起改。
+ */
+:root {
+  /* 列表项：进入 200ms / 退出 160ms，逐项 stagger 16ms（进出方向见组件） */
+  --motion-dur-list-in: 200ms;
+  --motion-dur-list-out: 160ms;
+  --motion-stagger: 16ms;
+  --motion-stagger-exit: 12ms;
+
+  /* 面板（侧边栏 / 移动端抽屉）：整体滑入滑出 */
+  --motion-dur-panel: 240ms;
+  /* 列表逐项退出后，整体滑动前的停顿（只在「收起 / 开启新对话」时用） */
+  --motion-dur-panel-exit-delay: 120ms;
+  /* 面板位移量：100% 表示整块从屏幕边缘外滑入；reduced-motion 时归零 */
+  --motion-panel-shift: 100%;
+
+  /* 高亮滑动（侧边栏选中态 / 设置标签） */
+  --motion-dur-highlight: 260ms;
+
+  /* 设置弹窗从按钮放大 / 缩回按钮 */
+  --motion-dur-dialog: 260ms;
+  /* 没有触发按钮 rect 时的兜底起始缩放 */
+  --motion-dialog-scale-min: 0.94;
+
+  /* 设置内容区换页：旧内容先侧移退出，再换新内容侧移进入 */
+  --motion-dur-content-out: 90ms;
+  --motion-dur-content-in: 150ms;
+
+  /* 位移：列表项从左到右淡入 / 从右到左退出，内容区侧移 */
+  --motion-shift-x: 14px;
+  --motion-shift-exit-x: -18px;
+  --motion-shift-content: 18px;
+
+  /* 缓动：收束为主；jitter 带一点过冲，只给高亮用，不做商业化顺滑 */
+  --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --motion-ease-both: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-ease-jitter: cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-dur-list-in: 80ms;
+    --motion-dur-list-out: 80ms;
+    --motion-stagger: 0ms;
+    --motion-stagger-exit: 0ms;
+
+    --motion-dur-panel: 60ms;
+    --motion-dur-panel-exit-delay: 0ms;
+    --motion-panel-shift: 0px;
+
+    --motion-dur-highlight: 1ms;
+
+    --motion-dur-dialog: 80ms;
+    --motion-dialog-scale-min: 1;
+
+    --motion-dur-content-out: 1ms;
+    --motion-dur-content-in: 80ms;
+
+    --motion-shift-x: 0px;
+    --motion-shift-exit-x: 0px;
+    --motion-shift-content: 0px;
+  }
+}

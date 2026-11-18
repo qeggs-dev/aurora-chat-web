@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type CSSProperties, type ReactNode, type Ref } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslate } from '../../i18n/index.js'
 import { IconCloseOutline16 } from './icons.js'
@@ -20,6 +20,8 @@ export const Modal = ({
   className,
   mainClassName,
   style,
+  contentRef,
+  overlayClassName,
   onClose,
 }: {
   title: ReactNode
@@ -32,6 +34,10 @@ export const Modal = ({
   mainClassName?: string
   /** 内容区的内联样式（样式包背景变量走这里） */
   style?: CSSProperties
+  /** 卡片元素 ref：进出场动效需要测量它的最终位置 */
+  contentRef?: Ref<HTMLDivElement>
+  /** 遮罩层的额外 class（进出场淡入淡出） */
+  overlayClassName?: string
   onClose: () => void
 }) => {
   const t = useTranslate()
@@ -55,10 +61,11 @@ export const Modal = ({
 
   return createPortal(
     <div
-      className={styles.overlay}
+      className={clsx(styles.overlay, overlayClassName)}
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
+        ref={contentRef}
         className={clsx(styles.content, className)}
         style={style}
         role="dialog"

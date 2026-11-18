@@ -34,7 +34,8 @@
   }
 
   &.active {
-    background-color: var(--dsw-specific-sidebar-nav-item-active-accent);
+    /* 选中底色由列表下层的滑动高亮提供，这里保持透明让高亮可见 */
+    background-color: transparent;
     color: var(--dsw-alias-brand-primary-invert);
 
     &::before {
@@ -69,6 +70,42 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   line-height: 18px;
+}
+
+/*
+ * 列表项进入：从左到右淡入，从上到下逐项延时（animation-delay 由 JS 按可视项算出）。
+ * 退出：从右到左淡出，从屏幕底部开始向上逐项延时。只动 transform / opacity。
+ */
+.itemEnter {
+  animation: itemEnter var(--motion-dur-list-in) var(--motion-ease-out) both;
+}
+
+.itemExit {
+  animation: itemExit var(--motion-dur-list-out) var(--motion-ease-in) both;
+}
+
+@keyframes itemEnter {
+  from {
+    opacity: 0;
+    transform: translateX(calc(-1 * var(--motion-shift-x)));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes itemExit {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(var(--motion-shift-exit-x));
+  }
 }
 
 .action {

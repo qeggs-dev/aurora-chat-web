@@ -29,11 +29,17 @@ import { getActiveResolvedPreset, initPresets, usePresetStore } from '../service
 import { initUsage } from '../services/usage/store.js'
 import { initMemory, setMemoryEnabled } from '../services/memory/store.js'
 import { onUploadNotice } from '../services/attachments.js'
+import { startAutoUpdateCheck } from '../services/update/autoCheck.js'
+import { updateErrorMessageKey } from '../services/update/messages.js'
+import { useUpdateStore } from '../services/update/store.js'
 import { Button } from '../components/base/Button.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
 import { CollapsedSider } from '../components/sider/CollapsedSider.js'
-import { closeMobileSider } from '../components/sider/mobileSiderState.js'
+import { closeMobileSider, useMobileSider } from '../components/sider/mobileSiderState.js'
 import { MobileSider, Sider } from '../components/sider/Sider.js'
+import { usePresence } from '../components/motion/usePresence.js'
+import { usePrefersReducedMotion } from '../components/motion/usePrefersReducedMotion.js'
+import { resolveMotionTokens, siderExitMs } from '../components/motion/motionMath.js'
 import styles from './App.module.css'
 import { bootstrapApp, type BootstrapServices } from './bootstrap.js'
 import { AppServicesProvider } from './AppServices.js'
@@ -107,6 +113,15 @@ export const App = () => {
   )
   const activeId = useChatStore((state) => state.activeId)
 
+  // 侧边栏进出动效：收起后先保持挂载到退出动画播完，再真正卸载
+  const reducedMotion = usePrefersReducedMotion()
+  const siderPresence = usePresence(
+    !isMobile && !siderCollapsed,
+    siderExitMs('list', resolveMotionTokens(reducedMotion))
+  )
+  // 退出动画播完前不切「已收起」布局，否则内容会先跳到左边再等侧边栏滑走
+  const siderExiting = siderPresence.mounted && siderPresence.stage === 'exit'
+
   usePreventPageScroll(isMobile)
 
   useEffect(() => {
@@ -117,6 +132,25 @@ export const App = () => {
   useEffect(() => onUploadNotice(showToast), [])
   // 服务层需要 toast 的提示（如「预设不支持附件，不能只发附件」）
   useEffect(() => onChatNotice(showToast), [])
+  // 启动 5s 后自动检查更新（设置可关）；只在有新版本时提示，结果缓存 24h
+  useEffect(() => startAutoUpdateCheck(), [])
+  // 检查结果：发现新版本 / 失败时轻提示，不打断使用
+  useEffect(
+    () =>
+      useUpdateStore.subscribe((state, previous) => {
+        if (state.status === 'available' && state.release) {
+          if (state.notifiedVersion !== state.release.version) {
+            state.markNotified(state.release.version)
+            showToast({ key: 'updateAvailableToast', params: { version: state.release.version } })
+          }
+          return
+        }
+        if (state.status === 'error' && state.error && state.error !== previous.error) {
+          showToast({ key: updateErrorMessageKey(state.error.code), type: 'error' })
+        }
+      }),
+    []
+  )
   useEffect(bindChatPersistence, [])
   // 多窗口同步：保存后广播、收到其他窗口的更新后失效 / 重载缓存
   useEffect(bindChatSync, [])
@@ -125,8 +159,13 @@ export const App = () => {
   useEffect(closeSearchPanel, [activeId])
   // 切换会话时停止朗读
   useEffect(stopReadAloud, [activeId])
-  // 移动端选中会话、切换布局后收起抽屉
-  useEffect(closeMobileSider, [activeId, isMobile])
+  // 移动端选中会话、切换布局后收起抽屉；选中会话的收起由侧边栏按高亮编排自己处理，
+  // 这里只在抽屉仍打开时兜底（避免覆盖掉 selection 的退出编排）
+  useEffect(() => {
+    if (useMobileSider.getState().open) {
+      closeMobileSider('plain')
+    }
+  }, [activeId, isMobile])
 
   // 应用级 Cordis 容器：先等六个服务装配，再按服务初始化；装配失败时退回直连模块初始化，
   // 并把原因显示在顶部（可重试），不会因为装配失败永远停在「会话加载中」。
@@ -163,7 +202,11 @@ export const App = () => {
     <AppServicesProvider context={context}>
       <>
         <div ref={frameRef} className={styles.frame}>
-          {isMobile ? <MobileSider /> : siderCollapsed ? null : <Sider />}
+          {isMobile ? (
+            <MobileSider />
+          ) : siderPresence.mounted ? (
+            <Sider stage={siderPresence.stage} />
+          ) : null}
           <main className={styles.main}>
             {bootstrapError ? (
               <div className={styles.saveError} role="alert">
@@ -188,7 +231,7 @@ export const App = () => {
               </div>
             ) : null}
             <div className={styles.content}>
-              {siderCollapsed ? <CollapsedSider /> : null}
+              {siderCollapsed && !siderExiting ? <CollapsedSider /> : null}
               {!ready || (activeId !== null && !session) ? (
                 <div className={styles.loadingView}>
                   {isMobile ? <MobileHeader /> : null}
@@ -220,7 +263,7 @@ export const App = () => {
                   <SessionView
                     session={session}
                     streaming={streaming}
-                    siderCollapsed={siderCollapsed}
+                    siderCollapsed={siderCollapsed && !siderExiting}
                   />
                 </SessionErrorBoundary>
               ) : (
