@@ -138,7 +138,16 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
   const canSend = !importingHistory && !streaming && voice.status === 'idle' && draftReady
 
+  const syncTextFromDom = () => {
+    const field = textareaRef.current
+    if (field && field.value !== getDraft(sessionId).text) {
+      setText(field.value)
+    }
+  }
+
   const send = () => {
+    // 兜底：如果输入框里的文字还没同步进草稿（WebView/输入法事件丢失），先同步再提交
+    syncTextFromDom()
     if (
       useChatStore.getState().importingHistory ||
       voice.status !== 'idle' ||
@@ -179,6 +188,11 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           disabled={importingHistory}
           value={text}
           onChange={(event) => setText(event.target.value)}
+          // 部分 Android WebView 在进程重启后可能漏掉 React 的 change 同步：
+          // input / compositionend 再兜一次，保证输入框里看得到的文字 = store 里的草稿。
+          onInput={(event) => setText(event.currentTarget.value)}
+          onCompositionEnd={(event) => setText(event.currentTarget.value)}
+          onBlur={() => syncTextFromDom()}
           onMouseDown={(event) => {
             // 仅 iOS Safari 需要：拦掉默认聚焦后手动 focus，避免整页被滚动。
             // Android WebView 保留原生行为，否则部分机型（vivo 等）点输入框不弹键盘、文字进不来。

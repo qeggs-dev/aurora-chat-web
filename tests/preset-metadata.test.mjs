@@ -113,3 +113,16 @@ test('显式写出的采样参数原样保留，其它字段仍缺省', async ()
   )
   assert.deepEqual(parsed.config.params, { temperature: 0.7, stop: ['END'] })
 })
+test('缺少 copyright 但包内带完整 LICENSE 文件时允许导入，并保留许可证全文', async () => {
+  const licenseText = 'MIT License\n\nCopyright (c) 2026 Demo Author\n\nPermission is hereby granted...'
+  const parsed = await parsePresetZip(
+    makeZip(withMetadata({ copyright: '' }), { LICENSE: strToU8(licenseText) })
+  )
+  assert.equal(parsed.config.id, 'demo-preset')
+  assert.equal((parsed.config.copyright ?? '').trim(), '')
+  assert.equal(parsed.license, licenseText)
+})
+
+test('缺少 copyright 且没有 LICENSE 文件时导入被拒（missingCopyright）', async () => {
+  await expectCode(parsePresetZip(makeZip(withMetadata({ copyright: '' }))), 'missingCopyright')
+})

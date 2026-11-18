@@ -48,15 +48,25 @@ export const PRESET_METADATA_ERROR_CODES: Readonly<Record<PresetMetadataField, P
   copyright: 'missingCopyright',
 }
 
-/** 返回缺失（trim 后为空）的元信息字段，顺序固定 */
+/** 返回缺失（trim 后为空）的元信息字段，顺序固定。
+ *  `allowMissingCopyright`：zip 内有完整 LICENSE 文件时，版权声明可由该文件承担。 */
 export const missingPresetMetadata = (
-  config: Pick<PresetConfig, PresetMetadataField> | null | undefined
+  config: Pick<PresetConfig, PresetMetadataField> | null | undefined,
+  options: { allowMissingCopyright?: boolean } = {}
 ): PresetMetadataField[] =>
-  PRESET_METADATA_FIELDS.filter((field) => !(config?.[field] ?? '').trim())
+  PRESET_METADATA_FIELDS.filter((field) => {
+    if (field === 'copyright' && options.allowMissingCopyright) {
+      return false
+    }
+    return !(config?.[field] ?? '').trim()
+  })
 
 /** 校验元信息；缺失时抛带字段名的稳定错误码（只报第一个缺失字段） */
-export const assertPresetMetadata = (config: Pick<PresetConfig, PresetMetadataField>): void => {
-  const missing = missingPresetMetadata(config)
+export const assertPresetMetadata = (
+  config: Pick<PresetConfig, PresetMetadataField>,
+  options: { allowMissingCopyright?: boolean } = {}
+): void => {
+  const missing = missingPresetMetadata(config, options)
   if (missing.length > 0) {
     const field = missing[0]
     throw new PresetError(PRESET_METADATA_ERROR_CODES[field], field)

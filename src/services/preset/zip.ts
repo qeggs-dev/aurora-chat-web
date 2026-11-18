@@ -465,7 +465,10 @@ const readPartialMemory = (raw: unknown): Partial<PresetMemory> | undefined => {
  * 元信息（描述 / 作者 / 版本 / 版权声明）trim 后不能为空；copyright 为空直接拒绝整个导入包。
  * 内置默认预设走 parseDefaultPresetConfig（它只需要 name），不经过这里。
  */
-const parseFullPresetConfig = (raw: Record<string, unknown>): PresetConfig => {
+const parseFullPresetConfig = (
+  raw: Record<string, unknown>,
+  options: { allowMissingCopyright?: boolean } = {}
+): PresetConfig => {
   const { id, name } = readIdentity(raw)
   if (typeof raw.protocol !== 'string' || !PROTOCOLS.has(raw.protocol as PresetProtocol)) {
     return badConfig('protocol must be openai, anthropic or responses')
@@ -497,7 +500,7 @@ const parseFullPresetConfig = (raw: Record<string, unknown>): PresetConfig => {
     icon: readFileRef(raw.icon, 'icon'),
     license: readFileRef(raw.license, 'license'),
   }
-  assertPresetMetadata(config)
+  assertPresetMetadata(config, options)
   return config
 }
 
@@ -564,6 +567,13 @@ const parseDefaultPresetConfig = (raw: Record<string, unknown>): PresetConfig =>
 /** 解析并校验 preset 清单；zip 导入与普通预设的保存共用这一套规则。 */
 export const parsePresetConfig = (text: string): PresetConfig =>
   parseFullPresetConfig(parseJsonObject(text))
+
+/**
+ * zip 导入专用：内嵌 LICENSE 文件可以代替 copyright 字段，
+ * 因此先跳过 copyright 校验，等解析到 LICENSE 后再在 parsePresetZip 里补判。
+ */
+export const parsePresetConfigForImport = (text: string): PresetConfig =>
+  parseFullPresetConfig(parseJsonObject(text), { allowMissingCopyright: true })
 
 /**
  * 保存手写 JSON 的入口：普通预设仍走严格校验；内置默认预设允许只含部分字段
@@ -669,7 +679,9 @@ export const parsePresetZip = async (file: File): Promise<ParsedPreset> => {
   if (!configPath) {
     throw new PresetError('noConfig')
   }
-  const config = parsePresetConfig(new TextDecoder().decode(paths.get(configPath) as Uint8Array))
+  const config = parsePresetConfigForImport(
+    new TextDecoder().decode(paths.get(configPath) as Uint8Array)
+  )
 
   // TS 的 Uint8Array<ArrayBufferLike> 与 BlobPart 不兼容，这里复制一份有独立 ArrayBuffer 的副本
   const bytesOf = (name: string): Uint8Array<ArrayBuffer> => {
@@ -740,6 +752,11 @@ export const parsePresetZip = async (file: File): Promise<ParsedPreset> => {
     }
     license = new TextDecoder().decode(bytes)
     config.license = { file: path }
+  }
+
+  // 版权声明可以由包内完整 LICENSE 文件承担；两者都没有才拒绝导入
+  if (!license && !(config.copyright ?? '').trim()) {
+    throw new PresetError('missingCopyright', 'copyright')
   }
 
   // 解析结果里的 file 已补齐（显式值或默认位置），下游 / IndexedDB 不需要再做默认路径查找
