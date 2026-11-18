@@ -43,9 +43,6 @@ export const ChatInput = memo(function ChatInput({ sessionId }: { sessionId: str
 })
 
 /** 只有 iOS Safari 需要拦默认聚焦来避免整页滚动 */
-const IOS_SAFARI =
-  typeof navigator !== 'undefined' && /iP(hone|ad|od)/.test(navigator.userAgent)
-
 const Input = ({ sessionId }: { sessionId: string | null }) => {
   const t = useTranslate()
   const draft = useDrafts((state) => state.drafts.get(sessionId) ?? EMPTY_DRAFT)
@@ -162,17 +159,46 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
         setText(value)
       }
     }
+    // 输入法合成期间部分 Android WebView 不会及时派发 input/compositionend，
+    // 文字已显示但 state 仍旧，发送按钮就先灰着；除了事件监听，再在聚焦期间做轻量轮询兜底。
+    let pollTimer: number | undefined
+    const startPolling = () => {
+      if (pollTimer !== undefined) {
+        return
+      }
+      pollTimer = window.setInterval(sync, 300)
+    }
+    const stopPolling = () => {
+      if (pollTimer !== undefined) {
+        window.clearInterval(pollTimer)
+        pollTimer = undefined
+      }
+    }
     field.addEventListener('input', sync, true)
+    field.addEventListener('compositionstart', sync, true)
+    field.addEventListener('compositionupdate', sync, true)
     field.addEventListener('compositionend', sync, true)
+    field.addEventListener('beforeinput', sync, true)
     field.addEventListener('change', sync, true)
     field.addEventListener('focus', sync, true)
+    field.addEventListener('focus', startPolling, true)
+    field.addEventListener('blur', stopPolling, true)
     document.addEventListener('visibilitychange', sync)
     const timer = window.setTimeout(sync, 0)
+    if (document.activeElement === field) {
+      startPolling()
+    }
     return () => {
+      stopPolling()
       field.removeEventListener('input', sync, true)
+      field.removeEventListener('compositionstart', sync, true)
+      field.removeEventListener('compositionupdate', sync, true)
       field.removeEventListener('compositionend', sync, true)
+      field.removeEventListener('beforeinput', sync, true)
       field.removeEventListener('change', sync, true)
       field.removeEventListener('focus', sync, true)
+      field.removeEventListener('focus', startPolling, true)
+      field.removeEventListener('blur', stopPolling, true)
       document.removeEventListener('visibilitychange', sync)
       window.clearTimeout(timer)
     }
@@ -227,9 +253,9 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           onCompositionEnd={(event) => setText(event.currentTarget.value)}
           onBlur={() => syncTextFromDom()}
           onMouseDown={(event) => {
-            // 仅 iOS Safari 需要：拦掉默认聚焦后手动 focus，避免整页被滚动。
-            // Android WebView 保留原生行为，否则部分机型（vivo 等）点输入框不弹键盘、文字进不来。
-            if (IOS_SAFARI && event.button === 0 && document.activeElement !== event.currentTarget) {
+            // 对齐上游：移动端（iOS 与 Android WebView）都在 mousedown 时手动聚焦，
+            // 避免默认聚焦行为导致页面滚动或输入法合成事件不同步。
+            if (isMobile && event.button === 0 && document.activeElement !== event.currentTarget) {
               event.preventDefault()
               event.currentTarget.focus({ preventScroll: true })
             }
