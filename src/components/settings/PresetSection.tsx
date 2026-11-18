@@ -995,6 +995,11 @@ export const PresetSection = () => {
   const selectedImported =
     selectedId !== null &&
     presets.some((preset) => preset.id === selectedId && preset.source === 'imported')
+  /** 导入预设的许可证来源（默认 LICENSE 文件 / api_configs.json 指定），详情页展示 */
+  const selectedLicenseSource =
+    selectedId === null
+      ? undefined
+      : presets.find((preset) => preset.id === selectedId)?.licenseSource
   const isActive = selectedId !== null && selectedId === activeId
   /** 当前启用预设的展示名；没有任何启用项时为 null */
   const activePreset =
@@ -1512,6 +1517,16 @@ export const PresetSection = () => {
                 <div className={styles.importedNote} role="note">
                   <span className={styles.tabBadge}>{t('presetImportedBadge')}</span>
                   <span>{t('presetImportedReadOnly')}</span>
+                  {selectedLicenseSource ? (
+                    <span>
+                      · {t('presetLicenseSource')}：
+                      {t(
+                        selectedLicenseSource === 'index'
+                          ? 'presetLicenseSourceIndex'
+                          : 'presetLicenseSourceDefault'
+                      )}
+                    </span>
+                  ) : null}
                 </div>
               ) : null}
               {selectedStored && !isActive ? (

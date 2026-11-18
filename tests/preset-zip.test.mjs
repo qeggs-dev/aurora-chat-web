@@ -43,10 +43,33 @@ const expectCode = (fn, code) => {
   )
 }
 
+// 导入包必须带可解析 LICENSE：默认在 zip 里放一份根目录 LICENSE；
+// 需要测「缺少许可证」的用例用 makeZipWithoutLicense / 直接构造 zip。
+const DEFAULT_LICENSE = strToU8('MIT License\n\nPermission is hereby granted, free of charge.')
+
+const hasLicenseEntry = (extra) => Object.keys(extra).some((name) => /^licen[cs]e/i.test(name))
+
 const makeZip = (config, extra = {}) =>
-  new File([zipSync({ 'api_configs.json': strToU8(JSON.stringify(config)), ...extra })], 'preset.zip', {
-    type: 'application/zip',
-  })
+  new File(
+    [
+      zipSync({
+        'api_configs.json': strToU8(JSON.stringify(config)),
+        ...(hasLicenseEntry(extra) ? {} : { LICENSE: DEFAULT_LICENSE }),
+        ...extra,
+      }),
+    ],
+    'preset.zip',
+    {
+      type: 'application/zip',
+    }
+  )
+
+const makeZipWithoutLicense = (config, extra = {}) =>
+  new File(
+    [zipSync({ 'api_configs.json': strToU8(JSON.stringify(config)), ...extra })],
+    'preset.zip',
+    { type: 'application/zip' }
+  )
 
 test('parsePresetConfig：合法清单规范化（trim、去结尾斜杠、元信息只做 trim）', () => {
   const config = parsePresetConfig(
@@ -267,6 +290,7 @@ test('zip 导入：显式目录条目被忽略（只统计文件），清单大�
       [
         zipSync({
           'api_configs.json': strToU8(JSON.stringify(FULL_CONFIG)),
+          LICENSE: DEFAULT_LICENSE,
           'assets/': new Uint8Array(0),
           'system_prompt.md': strToU8('hi'),
         }),
@@ -458,24 +482,70 @@ test('zip 导入：icon 显式路径严格，默认 icon.<ext> 自动补齐', as
   assert.equal(fromDefault.icon.type, 'image/webp')
 })
 
-test('zip 导入：license 显式严格，默认位置 LICENSE* 自动发现', async () => {
+test('zip 导入：license 显式严格，默认位置 LICENSE* 自动发现，缺失整包拒绝', async () => {
+  // 显式路径不存在 → licenseFileMissing（不回退默认位置）
   await assert.rejects(
-    parsePresetZip(makeZip({ ...FULL_CONFIG, license: { file: 'LICENSE' } })),
-    (error) => error instanceof PresetError && error.code === 'missingFile'
+    parsePresetZip(
+      makeZipWithoutLicense({ ...FULL_CONFIG, license: { file: 'LICENSE' } }, {
+        'other/LICENSE': strToU8('fallback'),
+      })
+    ),
+    (error) => error instanceof PresetError && error.code === 'licenseFileMissing'
   )
+  // 没有 LICENSE 也没有 license.file → missingLicense
+  await assert.rejects(
+    parsePresetZip(makeZipWithoutLicense(FULL_CONFIG)),
+    (error) => error instanceof PresetError && error.code === 'missingLicense'
+  )
+  // 显式路径存在 → 以索引为准，来源为 index
   const explicit = await parsePresetZip(
     makeZip({ ...FULL_CONFIG, license: { file: 'legal/LICENSE.txt' } }, {
       'legal/LICENSE.txt': strToU8('MIT'),
+      LICENSE: strToU8('default license'),
     })
   )
   assert.equal(explicit.license, 'MIT')
   assert.equal(explicit.config.license.file, 'legal/LICENSE.txt')
+  assert.equal(explicit.licenseSource, 'index')
 
   const defaultLicense = await parsePresetZip(
     makeZip({ ...FULL_CONFIG, copyright: '' }, { 'LICENSE.md': strToU8('MIT text') })
   )
   assert.equal(defaultLicense.license, 'MIT text')
   assert.equal(defaultLicense.config.license.file, 'LICENSE.md')
+  assert.equal(defaultLicense.licenseSource, 'default')
+})
+
+test('zip 导入：license 指向目录 / 空文件 / 超 200 KB 都拒绝（licenseFileMissing）', async () => {
+  // 目录条目会被 zip 读取层跳过 → 找不到普通文件
+  await assert.rejects(
+    parsePresetZip(
+      makeZip({ ...FULL_CONFIG, license: { file: 'legal' } }, {
+        'legal/': new Uint8Array(0),
+      })
+    ),
+    (error) => error instanceof PresetError && error.code === 'licenseFileMissing'
+  )
+  await assert.rejects(
+    parsePresetZip(makeZip(FULL_CONFIG, { LICENSE: new Uint8Array(0) })),
+    (error) => error instanceof PresetError && error.code === 'licenseFileMissing'
+  )
+  await assert.rejects(
+    parsePresetZip(makeZip(FULL_CONFIG, { LICENSE: strToU8('  \n ') })),
+    (error) => error instanceof PresetError && error.code === 'licenseFileMissing'
+  )
+  await assert.rejects(
+    parsePresetZip(
+      makeZip(FULL_CONFIG, { LICENSE: new Uint8Array(200 * 1024 + 1).fill(65) })
+    ),
+    (error) => error instanceof PresetError && error.code === 'licenseFileMissing'
+  )
+})
+
+test('zip 导入：LICENSE 存在时 copyright 仍可省略（LICENSE 独立必填）', async () => {
+  const parsed = await parsePresetZip(makeZip({ ...FULL_CONFIG, copyright: '' }))
+  assert.equal(parsed.config.copyright, undefined)
+  assert.match(parsed.license, /MIT License/)
 })
 
 test('zip 导入：manifest 本身非法时拒绝（badConfig）', async () => {

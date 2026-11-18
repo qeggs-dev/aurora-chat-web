@@ -17,6 +17,7 @@ import {
 } from '../../services/style/editStore.js'
 import { PALETTE_KEYS, type PaletteColorKey, type Theme } from '../../services/style/types.js'
 import { Button } from '../base/Button.js'
+import { LicenseEditor } from '../license/LicenseEditor.js'
 import {
   ACCEPT_COVER,
   ACCEPT_FONT,
@@ -129,12 +130,13 @@ const BasicInfoSection = () => {
         htmlFor={licenseField}
         error={issueAt('licenseText')}
       >
-        <textarea
+        <LicenseEditor
           id={licenseField}
-          className={clsx(styles.textarea, issueAt('licenseText') && styles.inputInvalid)}
-          rows={4}
           value={draft.licenseText}
-          onChange={(event) => setText('licenseText', event.target.value)}
+          author={draft.author}
+          project={draft.name}
+          invalid={Boolean(issueAt('licenseText'))}
+          onChange={(value) => setText('licenseText', value)}
         />
       </Field>
     </Section>

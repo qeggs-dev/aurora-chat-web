@@ -31,7 +31,6 @@ import {
   isChineseBrowser,
   setAutoCheckUpdates,
   setCompatibilityMode,
-  setLocale,
   setLocation,
   setThemePreference,
   setTtsVoice,
@@ -39,6 +38,7 @@ import {
   type ThemePreference,
 } from '../../services/settings.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
+import { builtinLocaleOf } from '../../i18n/messages.js'
 import { shouldShowUpdateBadge, useUpdateStore } from '../../services/update/store.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
@@ -48,6 +48,7 @@ import { STYLE_SLOTS } from '../../services/style/types.js'
 import { showToast } from '../base/toastState.js'
 import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import { LocaleSection } from './LocaleSection.js'
 import {
   getDirtyPresetDraftsSnapshot,
   resetPresetDrafts,
@@ -427,7 +428,7 @@ const SettingsContent = ({
           {rendered === 'general' ? (
             <>
               <ThemeSetting />
-              <LocaleSetting />
+              <LocaleSection />
               <CompatibilitySetting />
               <AutoCheckUpdatesSetting />
               <TtsVoiceSetting />
@@ -621,34 +622,12 @@ const LocationSetting = () => {
               value={location?.region ?? ''}
               placeholder={t('settingsLocationRegion')}
               options={regionCodes
-                .map((code) => ({ value: code, label: getRegionName(code, locale) }))
+                .map((code) => ({ value: code, label: getRegionName(code, builtinLocaleOf(locale)) }))
                 .sort((a, b) => a.label.localeCompare(b.label, locale))}
               onChange={(value) => setLocation({ region: value })}
             />
           )}
         </div>
-      }
-    />
-  )
-}
-
-const LocaleSetting = () => {
-  const t = useTranslate()
-  const locale = useSettings((state) => state.locale)
-  return (
-    <SettingCell
-      label={t('settingsLocalePreference')}
-      status={null}
-      action={
-        <Select
-          ariaLabel={t('settingsLocalePreference')}
-          value={locale}
-          options={[
-            { value: 'zh-CN', label: t('settingsLocaleZhCN'), lang: 'zh-CN' },
-            { value: 'en-US', label: t('settingsLocaleEnUS'), lang: 'en' },
-          ]}
-          onChange={setLocale}
-        />
       }
     />
   )

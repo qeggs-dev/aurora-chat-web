@@ -605,8 +605,10 @@ export type ParsedPreset = {
   config: PresetConfig
   /** 包图标（显式 icon 或默认位置 icon.<ext>）；都没有时 undefined */
   icon?: Blob
-  /** 许可证全文（显式 license 或默认位置 LICENSE*）；都没有时 undefined */
+  /** 许可证全文（显式 license 或默认位置 LICENSE*）；导入要求必须存在 */
   license?: string
+  /** 许可证来源：api_configs.json 显式 license.file（优先），或默认位置 LICENSE 文件 */
+  licenseSource: 'index' | 'default'
   /** system_prompt_file（显式或默认 system_prompt.md / prompt.md）的文本；启用时覆盖 config.system_prompt */
   promptText?: string
 }
@@ -741,26 +743,52 @@ export const parsePresetZip = async (file: File): Promise<ParsedPreset> => {
     }
   }
 
-  /** 读取 license：显式 license 严格；没写时按默认位置 LICENSE / LICENSE.txt / LICENSE.md 查找 */
+  /**
+   * license 强制可解析：
+   * - api_configs.json 写了 license.file 时以索引为准（显式路径优先于默认位置）；
+   * - 没写时按默认位置 LICENSE / LICENSE.txt / LICENSE.md 查找；
+   * - 文件必须存在、是普通文件（目录条目已被 zip 读取层跳过）、非空、不超过 200 KB，
+   *   否则整包拒绝：没有 LICENSE → missingLicense；有引用但不可用 → licenseFileMissing。
+   */
   let license: string | undefined
-  const licensePath = config.license
-    ? requireEntry(config.license.file)
-    : findEntry(DEFAULT_LICENSE_PATHS)
-  if (licensePath) {
-    const path = licensePath
-    const bytes = paths.get(path) as Uint8Array
-    if (bytes.length > MAX_LICENSE_BYTES) {
-      throw new PresetError('tooLarge', path)
+  const explicitLicenseFile = config.license?.file
+  let licensePath: string | undefined
+  if (explicitLicenseFile !== undefined) {
+    const normalized = normalizeEntryPath(explicitLicenseFile)
+    licensePath = normalized ? lowerPaths.get(normalized.toLowerCase()) : undefined
+    if (!licensePath) {
+      throw new PresetError('licenseFileMissing', explicitLicenseFile)
     }
-    license = new TextDecoder().decode(bytes)
-    config.license = { file: path }
+  } else {
+    licensePath = findEntry(DEFAULT_LICENSE_PATHS)
+    if (!licensePath) {
+      throw new PresetError('missingLicense', DEFAULT_LICENSE_PATHS.join(' / '))
+    }
   }
+  const licenseBytes = paths.get(licensePath) as Uint8Array
+  if (licenseBytes.length === 0 || licenseBytes.length > MAX_LICENSE_BYTES) {
+    throw new PresetError('licenseFileMissing', licensePath)
+  }
+  {
+    const text = new TextDecoder().decode(licenseBytes)
+    if (!text.trim()) {
+      throw new PresetError('licenseFileMissing', licensePath)
+    }
+    license = text
+  }
+  config.license = { file: licensePath }
 
-  // 版权声明可以由包内完整 LICENSE 文件承担；两者都没有才拒绝导入
+  // 版权声明可以由包内完整 LICENSE 文件承担；LICENSE 现在是独立必填，两者都没有才拒绝
   if (!license && !(config.copyright ?? '').trim()) {
     throw new PresetError('missingCopyright', 'copyright')
   }
 
   // 解析结果里的 file 已补齐（显式值或默认位置），下游 / IndexedDB 不需要再做默认路径查找
-  return { config, icon, license, promptText }
+  return {
+    config,
+    icon,
+    license,
+    licenseSource: explicitLicenseFile === undefined ? 'default' : 'index',
+    promptText,
+  }
 }

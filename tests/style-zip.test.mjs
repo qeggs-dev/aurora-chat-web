@@ -11,7 +11,26 @@ const P = STYLE_PREFIX
 
 const manifest = (overrides = {}) => ({ schema: 1, id: 'demo-pack', name: 'Demo Pack', assets: {}, ...overrides })
 
+// 导入包必须带可解析 LICENSE：默认在 zip 里放一份根目录 LICENSE；
+// 需要测「缺少许可证」的用例用 makeZipWithoutLicense。
+const DEFAULT_LICENSE = strToU8('MIT License\n\nPermission is hereby granted, free of charge.')
+
+const hasLicenseEntry = (extra) => Object.keys(extra).some((name) => /^licen[cs]e/i.test(name))
+
 const makeZip = (index, extra = {}) =>
+  new File(
+    [
+      zipSync({
+        'index.json': strToU8(typeof index === 'string' ? index : JSON.stringify(index)),
+        ...(hasLicenseEntry(extra) ? {} : { LICENSE: DEFAULT_LICENSE }),
+        ...extra,
+      }),
+    ],
+    'style.zip',
+    { type: 'application/zip' }
+  )
+
+const makeZipWithoutLicense = (index, extra = {}) =>
   new File(
     [
       zipSync({
@@ -35,7 +54,7 @@ const expectCode = async (promise, code) => {
   )
 }
 
-test('最小清单：assets 必填，其余可选字段缺省', async () => {
+test('最小清单：assets 必填，其余可选字段缺省（默认 LICENSE 必填）', async () => {
   const parsed = await parseStylePackZip(makeZip(manifest()))
   assert.equal(parsed.manifest.schema, 1)
   assert.equal(parsed.manifest.id, 'demo-pack')
@@ -44,8 +63,9 @@ test('最小清单：assets 必填，其余可选字段缺省', async () => {
   assert.deepEqual(parsed.assets, {})
   assert.equal(parsed.manifest.icon, undefined)
   assert.equal(parsed.manifest.cover, undefined)
-  assert.equal(parsed.manifest.license, undefined)
-  assert.equal(parsed.license, undefined)
+  assert.deepEqual(parsed.manifest.license, { file: 'LICENSE' })
+  assert.equal(parsed.licenseSource, 'default')
+  assert.match(parsed.license, /MIT License/)
   assert.deepEqual(parsed.icon, {})
   assert.deepEqual(parsed.cover, {})
   assert.deepEqual(parsed.ignored, [])
@@ -108,6 +128,7 @@ test('zip 里显式的目录条目不影响导入（按文件条目计数）', a
       [
         zipSync({
           'index.json': strToU8(JSON.stringify(manifest())),
+          LICENSE: DEFAULT_LICENSE,
           'assets/': new Uint8Array(0),
           'assets/icons/': new Uint8Array(0),
         }),
@@ -463,28 +484,85 @@ test('文本字段安全边界：sidebarTitle 致命拒绝，其它描述字段�
   await expectCode(parseStylePackZip(makeZip(manifest({ author: 42 }))), 'badIndex')
 })
 
-test('license：默认位置发现并保留全文；含不安全字符时不展示；显式缺失报错', async () => {
+test('license 强制可解析：默认位置 LICENSE 必须存在，否则 missingLicense', async () => {
   const found = await parseStylePackZip(
     makeZip(manifest(), { 'LICENSE.md': strToU8('MIT License\n\nPermission is granted') })
   )
   assert.equal(found.license, 'MIT License\n\nPermission is granted')
   assert.deepEqual(found.manifest.license, { file: 'LICENSE.md' })
+  assert.equal(found.licenseSource, 'default')
 
+  // 大小写不敏感（license / License）
+  const lower = await parseStylePackZip(
+    makeZip(manifest(), { license: strToU8('lowercase license') })
+  )
+  assert.equal(lower.license, 'lowercase license')
+  assert.deepEqual(lower.manifest.license, { file: 'license' })
+
+  await expectCode(parseStylePackZip(makeZipWithoutLicense(manifest())), 'missingLicense')
+})
+
+test('license：index.json 显式 license.file 优先于默认 LICENSE，且必须真实存在', async () => {
+  // index 指定 legal/LICENSE，同时根目录还有默认 LICENSE → 以索引为准
+  const explicit = await parseStylePackZip(
+    makeZip(manifest({ license: { file: 'legal/LICENSE' } }), {
+      'legal/LICENSE': strToU8('APL'),
+      LICENSE: strToU8('default text'),
+    })
+  )
+  assert.equal(explicit.license, 'APL')
+  assert.deepEqual(explicit.manifest.license, { file: 'legal/LICENSE' })
+  assert.equal(explicit.licenseSource, 'index')
+
+  // 显式路径不存在 → licenseFileMissing（不是 missingFile，也不是回退默认位置）
+  await expectCode(
+    parseStylePackZip(
+      makeZip(manifest({ license: { file: 'legal/missing.txt' } }), {
+        LICENSE: strToU8('fallback'),
+      })
+    ),
+    'licenseFileMissing'
+  )
+  // 旧版字符串写法等价于 { file }
+  await expectCode(
+    parseStylePackZip(makeZip(manifest({ license: 'missing-license.txt' }))),
+    'licenseFileMissing'
+  )
+})
+
+test('license：指向目录 / 空文件 / 超过 200 KB 都按 licenseFileMissing 拒绝整包', async () => {
+  // 目录条目会被 zip 读取层跳过 → 找不到普通文件
+  await expectCode(
+    parseStylePackZip(
+      makeZip(manifest({ license: { file: 'legal' } }), { 'legal/': new Uint8Array(0) })
+    ),
+    'licenseFileMissing'
+  )
+  // 空文件
+  await expectCode(
+    parseStylePackZip(makeZip(manifest(), { LICENSE: new Uint8Array(0) })),
+    'licenseFileMissing'
+  )
+  // 只有空白字符也视为不可解析
+  await expectCode(
+    parseStylePackZip(makeZip(manifest(), { LICENSE: strToU8('   \n\t ') })),
+    'licenseFileMissing'
+  )
+  // 超过 200 KB
+  await expectCode(
+    parseStylePackZip(
+      makeZip(manifest(), { LICENSE: new Uint8Array(200 * 1024 + 1).fill(65) })
+    ),
+    'licenseFileMissing'
+  )
+})
+
+test('license：含不安全字符的文件仍算可解析，只是不展示全文', async () => {
   const unsafe = await parseStylePackZip(
-    makeZip(manifest(), { 'LICENSE': strToU8('<script>alert(1)</script>') })
+    makeZip(manifest(), { LICENSE: strToU8('<script>alert(1)</script>') })
   )
   assert.equal(unsafe.license, undefined)
   // 解析后的清单仍指向实际条目（只是不展示全文）
   assert.deepEqual(unsafe.manifest.license, { file: 'LICENSE' })
-
-  await expectCode(
-    parseStylePackZip(makeZip(manifest({ license: { file: 'missing.txt' } }))),
-    'missingFile'
-  )
-
-  const explicit = await parseStylePackZip(
-    makeZip(manifest({ license: { file: 'legal/LICENSE' } }), { 'legal/LICENSE': strToU8('APL') })
-  )
-  assert.equal(explicit.license, 'APL')
-  assert.deepEqual(explicit.manifest.license, { file: 'legal/LICENSE' })
+  assert.equal(unsafe.licenseSource, 'default')
 })

@@ -471,6 +471,7 @@ export const importStylePack = async (file: File): Promise<void> => {
       icon: parsed.icon.light || parsed.icon.dark ? parsed.icon : undefined,
       cover: parsed.cover.light || parsed.cover.dark ? parsed.cover : undefined,
       license: parsed.license,
+      licenseSource: parsed.licenseSource,
       importedAt: Date.now(),
     })
     await refreshPacks()

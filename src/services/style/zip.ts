@@ -48,6 +48,10 @@ export type StylePackErrorCode =
   | 'badPath'
   | 'missingFile'
   | 'badFileType'
+  /** 包内既没有默认位置 LICENSE，也没有 index.json 的 license.file */
+  | 'missingLicense'
+  /** index.json 的 license.file（或默认 LICENSE）不存在 / 是目录 / 空文件 / 超过大小上限 */
+  | 'licenseFileMissing'
 
 export class StylePackError extends Error {
   constructor(
@@ -744,6 +748,8 @@ export type ParsedStylePack = {
   /** 详情页封面 blob，按主题分开（每个文件 ≤5 MB，png/jpg/jpeg/webp/svg） */
   cover: ThemedBlobs
   license?: string
+  /** 许可证来源：index.json 显式 license.file（优先），或默认位置 LICENSE 文件 */
+  licenseSource: 'index' | 'default'
   ignored: string[]
 }
 
@@ -1094,21 +1100,41 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
     resolvedAssets[assetId] = resolved
   }
 
-  // 包级 license：显式 file 严格；没写则按默认位置（LICENSE / LICENSE.txt / LICENSE.md ...）查找
-  const licensePath =
-    input.license?.file !== undefined
-      ? requireEntry(input.license.file)
-      : findEntry(LICENSE_DEFAULT_CANDIDATES)
+  /**
+   * 包级 license 强制可解析：
+   * - index.json 写了 license.file 时以索引为准（显式路径优先于默认位置）；
+   * - 没写时按默认位置（LICENSE / LICENSE.txt / LICENSE.md ...）查找；
+   * - 文件必须存在、是普通文件（目录条目已被 zip 读取层跳过）、非空、不超过 200 KB，
+   *   否则整包拒绝：没有 LICENSE → missingLicense；有引用但不可用 → licenseFileMissing。
+   */
+  const explicitLicenseFile = input.license?.file
+  let licensePath: string | undefined
+  if (explicitLicenseFile !== undefined) {
+    const normalized = normalizeEntryPath(explicitLicenseFile)
+    licensePath = normalized ? lowerPaths.get(normalized.toLowerCase()) : undefined
+    if (!licensePath) {
+      throw new StylePackError('licenseFileMissing', explicitLicenseFile)
+    }
+  } else {
+    licensePath = findEntry(LICENSE_DEFAULT_CANDIDATES)
+    if (!licensePath) {
+      throw new StylePackError('missingLicense', LICENSE_DEFAULT_CANDIDATES.join(' / '))
+    }
+  }
+  const licenseBytes = paths.get(licensePath) as Uint8Array
+  if (licenseBytes.length === 0 || licenseBytes.length > MAX_LICENSE_BYTES) {
+    throw new StylePackError('licenseFileMissing', licensePath)
+  }
   let license: string | undefined
-  if (licensePath) {
-    const bytes = paths.get(licensePath) as Uint8Array
-    if (bytes.length <= MAX_LICENSE_BYTES) {
-      const text = new TextDecoder().decode(bytes)
-      if (isUnsafeStyleText(text, true)) {
-        warn(`[style-pack] ${licensePath} 含控制字符或 <、>，不展示许可证全文`)
-      } else {
-        license = text
-      }
+  {
+    const text = new TextDecoder().decode(licenseBytes)
+    if (!text.trim()) {
+      throw new StylePackError('licenseFileMissing', licensePath)
+    }
+    if (isUnsafeStyleText(text, true)) {
+      warn(`[style-pack] ${licensePath} 含控制字符或 <、>，不展示许可证全文`)
+    } else {
+      license = text
     }
   }
 
@@ -1117,11 +1143,19 @@ export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> =>
     ...input,
     icon: resolveManifestRef(input.icon, 'icon'),
     cover: resolveManifestRef(input.cover, 'cover'),
-    license: licensePath ? { file: licensePath } : undefined,
+    license: { file: licensePath },
     assets: resolvedAssets,
   }
   const icon = readManifestBlobs(manifest.icon, 'icon')
   const cover = readManifestBlobs(manifest.cover, 'cover')
 
-  return { manifest, assets, icon, cover, license, ignored }
+  return {
+    manifest,
+    assets,
+    icon,
+    cover,
+    license,
+    licenseSource: explicitLicenseFile === undefined ? 'default' : 'index',
+    ignored,
+  }
 }

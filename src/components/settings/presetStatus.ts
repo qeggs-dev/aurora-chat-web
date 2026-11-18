@@ -25,6 +25,8 @@ export const presetErrorKeys: Record<string, TranslationKey> = {
   missingAuthor: 'presetErrorMissingAuthor',
   missingVersion: 'presetErrorMissingVersion',
   missingCopyright: 'presetErrorMissingCopyright',
+  missingLicense: 'presetErrorMissingLicense',
+  licenseFileMissing: 'presetErrorLicenseFileMissing',
 }
 
 export type PresetStatusKind = 'info' | 'error'

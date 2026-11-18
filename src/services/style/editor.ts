@@ -432,7 +432,9 @@ export const validateStyleDraft = (draft: StyleEditorDraft): StyleDraftIssue[] =
   issues.push(
     ...textIssues('licenseText', draft.licenseText, {
       required: false,
-      max: MAX_META_TEXT_LENGTH,
+      // 完整许可证文本（如 GPL-3.0 约 35 KB）必须能保存：字符上限按 200 KB 许可证文件放宽，
+      // 实际写入 LICENSE 时的字节数仍由下面的 MAX_LICENSE_TEXT_BYTES 检查
+      max: MAX_LICENSE_TEXT_BYTES,
       multiline: true,
     })
   )
@@ -784,6 +786,8 @@ export const draftToStoredStylePack = (
     icon: compiled.icon,
     cover: compiled.cover,
     license: compiled.license,
+    // 编辑器导出的包固定把 LICENSE 写进 index.json 的 license.file，来源即 index
+    licenseSource: 'index',
     importedAt: options.importedAt ?? options.existing?.importedAt ?? Date.now(),
     builtin: false,
     editor: {

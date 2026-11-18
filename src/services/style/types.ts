@@ -482,4 +482,6 @@ export type StylePackSummary = {
   manifest: StyleManifest
   /** 许可证全文；文件缺失或不安全时为 undefined */
   license?: string
+  /** 许可证来源：index.json 显式指定 / 默认 LICENSE 文件；旧记录没有 */
+  licenseSource?: 'index' | 'default'
 }

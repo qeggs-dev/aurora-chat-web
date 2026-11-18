@@ -58,6 +58,8 @@ const importErrorKeys: Record<StylePackErrorCode, TranslationKey> = {
   badPath: 'stylePackErrorBadPath',
   missingFile: 'stylePackErrorMissingFile',
   badFileType: 'stylePackErrorBadFileType',
+  missingLicense: 'stylePackErrorMissingLicense',
+  licenseFileMissing: 'stylePackErrorLicenseFileMissing',
 }
 
 /** 行内提示：`error` 为 true 时用错误色显示。 */
@@ -433,6 +435,20 @@ const StylePackDetailContent = ({
                 <code className={styles.detailCode} data-technical>
                   {manifest.license.file}
                 </code>
+              ) : (
+                <span className={styles.detailMuted}>{t('stylePackDetailNotProvided')}</span>
+              )}
+            </span>
+          </div>
+          <div className={styles.detailResourceRow}>
+            <span className={styles.detailResourceLabel}>{t('stylePackDetailLicenseSource')}</span>
+            <span className={styles.detailResourceValue}>
+              {pack.licenseSource ? (
+                t(
+                  pack.licenseSource === 'index'
+                    ? 'stylePackLicenseSourceIndex'
+                    : 'stylePackLicenseSourceDefault'
+                )
               ) : (
                 <span className={styles.detailMuted}>{t('stylePackDetailNotProvided')}</span>
               )}

@@ -21,6 +21,8 @@ export type StoredStylePack = {
   /** 详情页封面 blob，按主题分开（每个文件导入时 ≤5 MB） */
   cover?: ThemedBlobs
   license?: string
+  /** 许可证来源：index.json 显式指定（'index'）或默认位置 LICENSE（'default'）；旧记录没有 */
+  licenseSource?: 'index' | 'default'
   importedAt: number
   /** 随安装包分发的内置样式包：不可删除；用户同 id 导入不覆盖它 */
   builtin?: boolean
@@ -99,4 +101,5 @@ export const summarize = (
   builtin: pack.builtin,
   manifest: pack.manifest,
   license: pack.license,
+  licenseSource: pack.licenseSource,
 })

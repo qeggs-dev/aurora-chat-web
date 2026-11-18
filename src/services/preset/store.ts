@@ -257,6 +257,7 @@ export const importPresetZip = async (
       config: parsed.config,
       icon: parsed.icon,
       license: parsed.license,
+      licenseSource: parsed.licenseSource,
       promptText: parsed.promptText,
       importedAt: Date.now(),
       // 导入包只读：来源标记由服务层保存，UI 与保存接口据此拦截修改

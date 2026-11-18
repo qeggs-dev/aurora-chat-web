@@ -14,6 +14,8 @@ export type StoredPreset = {
   /** 清单 icon.file 指向的图片；手写 JSON 建的预设没有 */
   icon?: Blob
   license?: string
+  /** 许可证来源：api_configs.json 显式指定（'index'）或默认位置 LICENSE（'default'）；旧记录没有 */
+  licenseSource?: 'index' | 'default'
   /** 清单 system_prompt_file 指向的文本；启用时覆盖 config.system_prompt */
   promptText?: string
   importedAt: number
@@ -69,6 +71,8 @@ export const summarize = (preset: StoredPreset, iconUrl?: string): PresetSummary
     importedAt: preset.importedAt,
     // 只把 imported 透传给 UI（列表 / 详情据此加徽标并禁用编辑）；其余按 created 处理
     ...(preset.source === 'imported' ? { source: 'imported' as const } : {}),
+    license: preset.license,
+    licenseSource: preset.licenseSource,
     builtin: preset.builtin === true || isBuiltinPreset(preset.config) ? true : undefined,
   }
 }

@@ -20,6 +20,10 @@ export type PresetErrorCode =
   | 'missingAuthor'
   | 'missingVersion'
   | 'missingCopyright'
+  /** 导入包既没有默认位置 LICENSE，也没有 api_configs.json 的 license.file */
+  | 'missingLicense'
+  /** license.file（或默认 LICENSE）不存在 / 是目录 / 空文件 / 超过大小上限 */
+  | 'licenseFileMissing'
 
 export class PresetError extends Error {
   constructor(
@@ -189,6 +193,10 @@ export type PresetSummary = {
   builtin?: boolean
   /** 来源：zip 导入包只读；缺省（旧记录）按 created 处理 */
   source?: PresetSource
+  /** 许可证全文（导入包必须有） */
+  license?: string
+  /** 许可证来源：api_configs.json 显式指定 / 默认 LICENSE 文件；旧记录没有 */
+  licenseSource?: 'index' | 'default'
 }
 
 /**

@@ -1,8 +1,11 @@
 import { create } from 'zustand'
 import type { TtsVoice } from './api/speech.js'
+import { isCustomLocale } from '../i18n/messages.js'
 import { normalizeLocation, type UserLocation } from './location.js'
 
-export type Locale = 'zh-CN' | 'en-US'
+/** 内置语言；自定义语言在设置里存成 `custom:<id>`（见 i18n/messages.ts） */
+export type BuiltinLocale = 'zh-CN' | 'en-US'
+export type Locale = BuiltinLocale | `custom:${string}`
 
 /** 主题偏好；默认跟随系统 */
 export type ThemePreference = 'light' | 'dark' | 'system'
@@ -63,12 +66,15 @@ const write = (key: string, value: string | null) => {
 export const isChineseBrowser = (): boolean =>
   (typeof navigator === 'undefined' ? 'zh' : navigator.language).toLowerCase().startsWith('zh')
 
+/** 浏览器语言决定系统语言（中文浏览器 → 中文，否则英文） */
+export const systemLocale = (): BuiltinLocale => (isChineseBrowser() ? 'zh-CN' : 'en-US')
+
 const initialLocale = (): Locale => {
   const saved = read(KEYS.locale)
-  if (saved === 'zh-CN' || saved === 'en-US') {
-    return saved
+  if (saved === 'zh-CN' || saved === 'en-US' || (saved !== null && isCustomLocale(saved))) {
+    return saved as Locale
   }
-  return isChineseBrowser() ? 'zh-CN' : 'en-US'
+  return systemLocale()
 }
 
 const initialLocation = (): UserLocation | null => {

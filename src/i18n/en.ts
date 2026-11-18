@@ -845,4 +845,138 @@ export const en = {
   replyEditEdited: 'Edited',
   replyEditFailed: 'Could not save the edit. Please try again.',
   replyEditEmpty: 'Content cannot be empty',
+  settingsLocalePreferenceDescription:
+    'Interface language. Import a custom locale pack to add it to the list; “Export current language” gives you the full JSON to edit and re-import.',
+  settingsLocaleImport: 'Import language file',
+  settingsLocaleExport: 'Export current language',
+  settingsLocaleInUse: 'In use',
+  settingsLocaleDetails: 'Details',
+  settingsLocaleDelete: 'Delete',
+  settingsLocaleNoCustom: 'No custom language packs imported yet.',
+  settingsLocaleDetailTitle: 'Custom language details',
+  settingsLocaleDetailName: 'Name',
+  settingsLocaleDetailId: 'ID',
+  settingsLocaleDetailLocale: 'Base locale',
+  settingsLocaleDetailDescription: 'Description',
+  settingsLocaleDetailAuthor: 'Author',
+  settingsLocaleDetailVersion: 'Version',
+  settingsLocaleDetailLicense: 'Full LICENSE text',
+  settingsLocaleDetailLicenseTemplate: 'Matches built-in template: {name}',
+  settingsLocaleImported: 'Imported language pack “{name}”: {imported} messages',
+  settingsLocaleImportedSkipped:
+    'Imported language pack “{name}”: {imported} messages, skipped {skipped} unknown keys, {missing} missing keys fall back to the built-in language',
+  settingsLocaleImportFailed: 'Could not import the language pack: {message}',
+  settingsLocaleExported: 'Exported language file {name}',
+  settingsLocaleExportFailed: 'Could not export the language file: {message}',
+  settingsLocaleDeleted: 'Deleted language pack “{name}”',
+  settingsLocaleDeletedFallback:
+    'Deleted language pack “{name}”; the interface language fell back to “{locale}”',
+  settingsLocaleDeleteFailed: 'Could not delete the language pack. Please try again.',
+  localePackErrorTooLarge:
+    'The language file is too large (packs up to 1 MB, LICENSE up to 200 KB).',
+  localePackErrorBadJson: 'The language file is not valid JSON.',
+  localePackErrorBadSchema: 'Invalid language file: schema must be 1.',
+  localePackErrorBadId:
+    'Invalid id: use 1–64 lowercase letters, digits, dots, underscores or hyphens.',
+  localePackErrorReservedId: 'The ids “zh” and “en” are reserved for built-in languages. Choose another id.',
+  localePackErrorMissingField: 'Missing or empty required field “{field}”.',
+  localePackErrorBadMessages:
+    'messages must be a string → string object (problem key: {field}).',
+  licenseWizardOpen: 'License wizard',
+  licenseWizardTitle: 'License selection wizard',
+  licenseWizardProgress: 'Step {current} of {total}',
+  licenseWizardBack: 'Back',
+  licenseWizardResult: 'Recommended license',
+  licenseWizardRationale: 'Why this license',
+  licenseWizardPreview: 'Full text preview after variable replacement',
+  licenseWizardApply: 'Apply template',
+  licenseWizardRestart: 'Choose another license',
+  licenseWizardUseWithoutEdit: 'Use recommended template',
+  licenseWizardName: 'Attribution / copyright holder',
+  licenseWizardYear: 'Year',
+  licenseWizardNamePlaceholder: 'e.g. your name or organization',
+  licenseWizardNameRequired: 'Please fill in the attribution / copyright holder (cannot be empty).',
+  licenseWizardYearRequired: 'Please fill in the year.',
+  licenseWizardYearInvalid: 'The year must be 4 digits, e.g. 2026.',
+  licenseWizardYes: 'Yes',
+  licenseWizardNo: 'No',
+  licenseQWizardWorkType: 'What is this work mainly?',
+  licenseQWorkTypeCode: 'Software code',
+  licenseQWorkTypeCreative: 'Creative work (articles, images, music, …)',
+  licenseQCommercial: 'Allow commercial use?',
+  licenseQDerivatives: 'Allow modification / derivative works?',
+  licenseQShareAlike: 'Must derivative works be shared under the same terms (copyleft / ShareAlike)?',
+  licenseQProprietary: 'May adaptations be distributed closed-source or under proprietary terms?',
+  licenseQNetwork: 'Will the work be offered as a network service (SaaS)?',
+  licenseQPublicDomain: 'Do you accept waiving all rights (CC0 / public domain)?',
+  licenseQPublicDomainAccept: 'Accept, waive all rights',
+  licenseQPublicDomainReject: 'Do not accept',
+  licenseQPublicDomainDontCare: "Don't care",
+  licenseTemplateChoose: 'Pick a template',
+  licenseTemplateCustom: 'Custom text',
+  licenseTemplateFillHint: 'Selecting a template fills the full license text; you can still edit it afterwards',
+  licenseTemplateKindCc: 'CC',
+  licenseTemplateKindCode: 'Code',
+  licenseTemplateOfficial: 'View official text',
+  licenseTemplateDisclaimer: 'Template only, not legal advice.',
+  licenseTemplateReplaceTitle: 'Replace the current license text?',
+  licenseTemplateReplaceBody:
+    'The editor already contains manually entered text. Choosing the “{name}” template will replace all of it.',
+  licenseTemplateReplaceConfirm: 'Replace',
+  licenseWhyUnlicense:
+    'You accept waiving all rights: the Unlicense dedicates the work to the public domain for anyone to use freely.',
+  licenseWhyNonCommercialCode:
+    'No commercial use: there is no standard noncommercial software license, and PolyForm Noncommercial is a common choice for software.',
+  licenseWhyCodeNoDerivatives:
+    'Code licenses generally cannot forbid modification; if you must forbid derivatives you need a custom proprietary license — MIT is the common permissive choice.',
+  licenseWhyMpl:
+    'Derivatives must be shared alike but may be combined with closed source: MPL-2.0 is file-level copyleft.',
+  licenseWhyAgpl:
+    'Copyleft is required and offering the work over a network must also share source: AGPL-3.0 covers network services.',
+  licenseWhyGpl:
+    'Commercial use is allowed but derivative works must stay open: GPL-3.0 is the standard choice.',
+  licenseWhyPermissive:
+    'Commercial use and closed-source derivatives are allowed: a permissive license such as MIT is enough; just keep the copyright and license notice.',
+  licenseWhyCc0:
+    'You accept waiving all rights: CC0 1.0 dedicates the work to the public domain with no attribution required.',
+  licenseWhyCcByNcNd:
+    'No commercial use and no derivatives: CC BY-NC-ND 4.0 is the closest combination.',
+  licenseWhyCcByNcSa:
+    'No commercial use and derivatives must be shared alike: CC BY-NC-SA 4.0.',
+  licenseWhyCcByNc:
+    'No commercial use: CC BY-NC 4.0 requires attribution and allows noncommercial use and modification.',
+  licenseWhyCcByNd:
+    'No modification / derivatives: CC BY-ND 4.0 allows redistribution but not adapted versions.',
+  licenseWhyCcBySa:
+    'Derivatives must be shared alike (or proprietary adaptations are not allowed): CC BY-SA 4.0.',
+  licenseWhyCcBy:
+    'Commercial use and derivatives are allowed (including closed adaptations): CC BY 4.0 only requires attribution and a license link.',
+  licenseQWorkTypeHint:
+    'Software and creative works use different license families: MIT / GPL and friends for code, CC for creative works.',
+  licenseQCommercialHint:
+    'When commercial use is not allowed, permissive open-source licenses do not apply; only noncommercial licenses or CC NC variants remain.',
+  licenseQDerivativesHint:
+    'When modification / derivatives are not allowed, only verbatim-redistribution licenses remain (e.g. CC BY-ND / CC BY-NC-ND).',
+  licenseQShareAlikeHint:
+    'With ShareAlike (copyleft), derivative works must be distributed under the same license.',
+  licenseQProprietaryHint:
+    'Allowing closed / proprietary distribution is compatible with permissive licenses; disallowing it needs strong copyleft so derivatives stay open.',
+  licenseQNetworkHint:
+    'When offering the work as a network service must also share source, AGPL is needed instead of GPL.',
+  licenseQPublicDomainHint:
+    'Accepting a full waiver of rights leads to the Unlicense (code) or CC0 (creative works); “don’t care” follows your other answers.',
+  stylePackErrorMissingLicense:
+    'The package has no parseable license: add LICENSE / LICENSE.txt / LICENSE.md at the package root, or point index.json license.file at a file inside the package.',
+  stylePackErrorLicenseFileMissing:
+    'The index.json license.file (or the default LICENSE) is missing, is a directory, is empty, or exceeds 200 KB; the import was rejected.',
+  presetErrorMissingLicense:
+    'The package has no parseable license: add LICENSE / LICENSE.txt / LICENSE.md at the package root, or point api_configs.json license.file at a file inside the package.',
+  presetErrorLicenseFileMissing:
+    'The api_configs.json license.file (or the default LICENSE) is missing, is a directory, is empty, or exceeds 200 KB; the import was rejected.',
+  stylePackDetailLicenseSource: 'License source',
+  stylePackLicenseSourceDefault: 'Default LICENSE file',
+  stylePackLicenseSourceIndex: 'index.json license.file',
+  presetLicenseSource: 'License source',
+  presetLicenseSourceDefault: 'Default LICENSE file',
+  presetLicenseSourceIndex: 'api_configs.json license.file',
 } satisfies Record<keyof typeof zh, string>

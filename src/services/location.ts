@@ -22,10 +22,13 @@ const regionNames = {
   'en-US': new Intl.DisplayNames(['en-US'], { type: 'region' }),
 }
 
-export const getRegionName = (code: string, locale: 'zh-CN' | 'en-US'): string =>
-  regions.has(code)
-    ? (regionNameOverrides[locale][code] ?? regionNames[locale].of(code) ?? code)
+/** 界面语言可能是自定义语言（custom:<id>）：地区名只用内置中英文表，非英文一律按中文。 */
+export const getRegionName = (code: string, locale: string): string => {
+  const builtin: 'zh-CN' | 'en-US' = locale === 'en-US' ? 'en-US' : 'zh-CN'
+  return regions.has(code)
+    ? (regionNameOverrides[builtin][code] ?? regionNames[builtin].of(code) ?? code)
     : ''
+}
 
 export const normalizeLocation = (value: unknown): UserLocation | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

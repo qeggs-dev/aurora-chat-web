@@ -27,15 +27,28 @@ const COMPLETE_CONFIG = {
 
 const withMetadata = (overrides) => ({ ...COMPLETE_CONFIG, ...overrides })
 
-/** 构造只含 api_configs.json（+ 可选额外文件）的预设 zip */
+/** 导入包必须带可解析 LICENSE：默认放一份根目录 LICENSE；缺失场景用 makeZipWithoutLicense */
+const DEFAULT_LICENSE = strToU8('MIT License\n\nPermission is hereby granted, free of charge.')
+
+const hasLicenseEntry = (extra) => Object.keys(extra).some((name) => /^licen[cs]e/i.test(name))
+
+/** 构造只含 api_configs.json（+ 默认 LICENSE + 可选额外文件）的预设 zip */
 const makeZip = (config, extra = {}) =>
   new File(
     [
       zipSync({
         'api_configs.json': strToU8(JSON.stringify(config)),
+        ...(hasLicenseEntry(extra) ? {} : { LICENSE: DEFAULT_LICENSE }),
         ...extra,
       }),
     ],
+    'preset.zip',
+    { type: 'application/zip' }
+  )
+
+const makeZipWithoutLicense = (config) =>
+  new File(
+    [zipSync({ 'api_configs.json': strToU8(JSON.stringify(config)) })],
     'preset.zip',
     { type: 'application/zip' }
   )
@@ -64,12 +77,18 @@ test('完整元信息的 zip 能导入，并保留提示词文件', async () => 
   assert.equal(parsed.promptText, 'You are a demo assistant.')
 })
 
-test('缺少 copyright 的 zip 导入被拒（missingCopyright）', async () => {
-  await expectCode(parsePresetZip(makeZip(withMetadata({ copyright: '' }))), 'missingCopyright')
+test('缺少 copyright 且没有 LICENSE 的 zip 被拒（missingLicense）', async () => {
+  await expectCode(
+    parsePresetZip(makeZipWithoutLicense(withMetadata({ copyright: '' }))),
+    'missingLicense'
+  )
 })
 
-test('copyright 只有空白同样被拒（missingCopyright）', async () => {
-  await expectCode(parsePresetZip(makeZip(withMetadata({ copyright: '   ' }))), 'missingCopyright')
+test('copyright 只有空白且没有 LICENSE 同样被拒（missingLicense）', async () => {
+  await expectCode(
+    parsePresetZip(makeZipWithoutLicense(withMetadata({ copyright: '   ' }))),
+    'missingLicense'
+  )
 })
 
 test('description 为空时导入被拒（missingDescription）', async () => {
@@ -123,6 +142,9 @@ test('缺少 copyright 但包内带完整 LICENSE 文件时允许导入，并保
   assert.equal(parsed.license, licenseText)
 })
 
-test('缺少 copyright 且没有 LICENSE 文件时导入被拒（missingCopyright）', async () => {
-  await expectCode(parsePresetZip(makeZip(withMetadata({ copyright: '' }))), 'missingCopyright')
+test('缺少 copyright 且没有 LICENSE 文件时导入被拒（missingLicense）', async () => {
+  await expectCode(
+    parsePresetZip(makeZipWithoutLicense(withMetadata({ copyright: '' }))),
+    'missingLicense'
+  )
 })
