@@ -3,6 +3,7 @@ import { ApiError, verifyApiKey } from '../../services/api/client.js'
 import { classifyApiError } from '../../services/api/errors.js'
 import { setApiKey } from '../../services/settings.js'
 import { useTranslate } from '../../i18n/index.js'
+import { showToast } from '../base/toastState.js'
 
 /** 输入 API Key 后先用 GET /models 校验，通过才保存 */
 export const useApiKeyForm = (onSaved?: () => void) => {
@@ -38,6 +39,7 @@ export const useApiKeyForm = (onSaved?: () => void) => {
       await verifyApiKey(apiKey)
       setApiKey(apiKey)
       setValue('')
+      showToast({ key: 'apiKeySaved' })
       onSaved?.()
     } catch (e) {
       setFailure({ cause: e })
