@@ -377,6 +377,26 @@
   overflow-wrap: anywhere;
 }
 
+/* 导入预设的只读说明：徽标 + 一行文案 */
+.importedNote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* 提示词模板变量按钮：换行排列，不挤压编辑区 */
+.templateVars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 /* 开关 */
 .switchRow {
   display: flex;

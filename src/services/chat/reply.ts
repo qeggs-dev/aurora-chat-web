@@ -7,7 +7,7 @@ import type {
   TextBlockParam,
   ToolResultBlockParam,
 } from '../api/types.js'
-import { getActiveResolvedPreset } from '../preset/index.js'
+import { getActiveResolvedPreset, renderPromptTemplate } from '../preset/index.js'
 import type {
   AssistantMessage,
   ClientToolUsePart,
@@ -18,24 +18,34 @@ import type {
   SessionCompaction,
   UserMessage,
 } from './types.js'
-import { runtimeMeta } from './runtimeInfo.js'
+import { readRuntimeEnv, runtimeMeta } from './runtimeInfo.js'
 import { buildCompactedSummaryText } from './compaction.js'
+
+/** 应用自带的系统提示词：预设没写 system_prompt 时用它，也是默认预设编辑器里的 placeholder 预览 */
+export const APP_SYSTEM_PROMPT = '该助手为DeepSeek，由深度求索公司创造。'
 
 /**
  * 生效的系统提示词：启用预设且预设声明了 system_prompt 时用它替换应用自带提示词
  * （预设没写或只有空白时保持应用自带提示词，与接入预设前一致）。
  *
- * 末尾再追加一段每次请求现算的运行时元信息（平台 / 版本 / 语言 / 主题 / 本地时间），
- * 三种协议都由 system（Anthropic）、system 消息（Chat）或 instructions（Responses）携带；
- * 元信息不写进用户消息与会话历史。
+ * 选中的提示词按「提示词模板」渲染一次：`{{preset.*}}` / `{{env.*}}` 变量替换成当前
+ * 生效配置与运行环境（未识别的变量原样保留；没有变量时输出不变）。
+ *
+ * 末尾再追加一段每次请求现算的运行时元信息（平台 / 版本 / 语言 / 主题，**不含时间**，
+ * 保证前缀稳定、KV cache 可复用），三种协议都由 system（Anthropic）、system 消息（Chat）
+ * 或 instructions（Responses）携带；元信息不写进用户消息与会话历史。
  *
  * latest_reminder 的协议映射不在这里做：chat / responses 由 providers 适配层降级为同位置的
  * system / developer 消息，anthropic 保留 latest_reminder 角色（DeepSeek 扩展）。
  */
 export const buildSystemPrompt = (fallback: string): string => {
-  const presetPrompt = getActiveResolvedPreset()?.system_prompt.trim()
-  const base = presetPrompt ? presetPrompt : fallback.trim()
-  const meta = runtimeMeta()
+  const resolved = getActiveResolvedPreset()
+  const presetPrompt = resolved?.system_prompt.trim()
+  const raw = presetPrompt ? presetPrompt : fallback.trim()
+  // 一次快照同时用于模板变量与运行时元信息，避免两次读取之间环境字段不一致
+  const env = readRuntimeEnv()
+  const base = renderPromptTemplate(raw, resolved, env)
+  const meta = runtimeMeta(env)
   return base ? `${base}\n\n${meta}` : meta
 }
 

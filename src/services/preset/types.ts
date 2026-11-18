@@ -13,6 +13,8 @@ export type PresetErrorCode =
   | 'badFileType'
   /** 尝试导入 / 覆盖内置预设保留的 id（默认预设为 default） */
   | 'reservedId'
+  /** 导入的预设只读：保存 / 重命名等修改接口一律拒绝 */
+  | 'importedReadOnly'
 
 export class PresetError extends Error {
   constructor(
@@ -21,6 +23,25 @@ export class PresetError extends Error {
   ) {
     super(detail ?? code)
     this.name = 'PresetError'
+  }
+}
+
+/**
+ * 预设来源：`imported` 为 zip 导入包，只读；`created` 为用户新建 / 编辑保存。
+ * 旧记录没有该字段时按 `created` 处理（保持向后兼容，仍可编辑）。
+ */
+export type PresetSource = 'created' | 'imported'
+
+/**
+ * 服务层只读拦截：保存 / 重命名等修改接口在写库前调用。
+ * 只有 `source === 'imported'` 会抛错（稳定错误码 importedReadOnly），
+ * 内置默认预设与旧记录都不受影响。
+ */
+export const assertPresetEditable = (
+  preset: { id?: string; source?: PresetSource } | null | undefined
+): void => {
+  if (preset?.source === 'imported') {
+    throw new PresetError('importedReadOnly', preset.id)
   }
 }
 
@@ -119,6 +140,8 @@ export type PresetSummary = {
   importedAt: number
   /** 内置预设（默认预设 / 内置演示包）：不可删除 */
   builtin?: boolean
+  /** 来源：zip 导入包只读；缺省（旧记录）按 created 处理 */
+  source?: PresetSource
 }
 
 /** 参数默认值：清单缺省 params 时使用，新建预设的编辑器模板也用它 */

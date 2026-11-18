@@ -13,6 +13,7 @@ import {
   DEFAULT_PRESET_ID,
   DEFAULT_PRESET_MEMORY,
   DEFAULT_PRESET_PARAMS,
+  assertPresetEditable,
   isSystemDefaultPreset,
   PresetError,
   resolvePreset,
@@ -181,6 +182,8 @@ export const importPresetZip = async (file: File): Promise<void> => {
       license: parsed.license,
       promptText: parsed.promptText,
       importedAt: Date.now(),
+      // 导入包只读：来源标记由服务层保存，UI 与保存接口据此拦截修改
+      source: 'imported',
     })
     await refreshPresets()
     if (!get().activeId || get().activeId === parsed.config.id) {
@@ -205,6 +208,8 @@ export const savePresetJson = async (text: string): Promise<void> => {
     const config = parsePresetConfigForSave(text)
     const isDefault = config.id === DEFAULT_PRESET_ID
     const previous = await getStoredPreset(config.id)
+    // 导入的预设只读：保存 / 重命名等修改一律拒绝（删除不受限）。默认预设与旧记录不受影响。
+    assertPresetEditable(previous)
     // 内置演示包的配置可以被编辑，但普通预设不能占用它的 id
     if (previous?.builtin && !isDefault) {
       throw new PresetError('reservedId', config.id)
@@ -236,6 +241,8 @@ export const savePresetJson = async (text: string): Promise<void> => {
       promptText,
       importedAt: isDefault ? (previous?.importedAt ?? Date.now()) : Date.now(),
       ...(previous?.builtin === true || isDefault ? { builtin: true } : {}),
+      // 新建 / 编辑保存的预设都是可编辑的；内置预设不记来源（内置语义优先）
+      ...(isDefault || previous?.builtin === true ? {} : { source: 'created' as const }),
     })
     await refreshPresets()
     if (!get().activeId || get().activeId === config.id) {

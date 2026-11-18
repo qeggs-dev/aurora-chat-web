@@ -34,6 +34,7 @@ import {
   savePresetJson,
   usePresetState,
 } from '../../services/preset/store.js'
+import { PRESET_TEMPLATE_VARIABLES } from '../../services/preset/template.js'
 import {
   DEFAULT_PRESET_COMPACTION,
   DEFAULT_PRESET_ID,
@@ -41,10 +42,12 @@ import {
   DEFAULT_PRESET_PARAMS,
   isBuiltinPreset,
   PresetError,
+  resolvePreset,
   type PresetConfig,
   type PresetProtocol,
   type PresetSummary,
 } from '../../services/preset/types.js'
+import { APP_SYSTEM_PROMPT } from '../../services/chat/reply.js'
 import { Button } from '../base/Button.js'
 import {
   IconRefreshOutline16,
@@ -88,6 +91,7 @@ const presetErrorKeys: Record<string, TranslationKey> = {
   missingFile: 'presetErrorMissingFile',
   badFileType: 'presetErrorBadFileType',
   reservedId: 'presetErrorReservedId',
+  importedReadOnly: 'presetErrorImportedReadOnly',
 }
 
 /** 错误对象按当前语言展示：已知 PresetError 用错误码文案，其余带上原始 message。 */
@@ -150,6 +154,16 @@ type NumberRule = {
 
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER
 
+/**
+ * 应用自带默认配置（未启用任何预设时实际生效的值）。
+ * 默认预设里留空的字段用它做 placeholder，让用户看到当前真正生效的值而不是笼统的「使用系统默认」。
+ */
+const SYSTEM_DEFAULT_PRESET = resolvePreset(null)
+
+/** 应用自带提示词的首行预览（默认预设的提示词空 textarea 的 placeholder） */
+const APP_PROMPT_PREVIEW =
+  APP_SYSTEM_PROMPT.split('\n').find((line) => line.trim())?.trim() ?? ''
+
 /** 与 services/preset/zip.ts 的校验规则保持一致 */
 const NUMBER_RULES: Record<NumericField, NumberRule> = {
   temperature: { min: 0, max: 2, integer: false, message: 'presetFieldNumberRange' },
@@ -190,6 +204,26 @@ const NUMERIC_FIELDS: NumericField[] = [
   'keep_recent_messages',
   'max_results',
 ]
+
+/** 只有内置默认预设（id default）展示「系统默认：<具体值>」；其它内置演示包仍用通用文案 */
+const isDefaultPresetDraft = (draft: Draft): boolean =>
+  draft.builtin && draft.config.id === DEFAULT_PRESET_ID
+
+/** 默认预设空数值字段的 placeholder 文本：系统默认的具体数值（null 表示默认留空） */
+const SYSTEM_DEFAULT_NUMBER_TEXT: Record<NumericField, string | null> = {
+  temperature: String(SYSTEM_DEFAULT_PRESET.params.temperature),
+  top_p: String(SYSTEM_DEFAULT_PRESET.params.top_p),
+  max_tokens: String(SYSTEM_DEFAULT_PRESET.params.max_tokens),
+  presence_penalty: String(SYSTEM_DEFAULT_PRESET.params.presence_penalty),
+  frequency_penalty: String(SYSTEM_DEFAULT_PRESET.params.frequency_penalty),
+  seed:
+    SYSTEM_DEFAULT_PRESET.params.seed === null
+      ? null
+      : String(SYSTEM_DEFAULT_PRESET.params.seed),
+  trigger_tokens: String(SYSTEM_DEFAULT_PRESET.compaction.trigger_tokens),
+  keep_recent_messages: String(SYSTEM_DEFAULT_PRESET.compaction.keep_recent_messages),
+  max_results: String(SYSTEM_DEFAULT_PRESET.memory.max_results),
+}
 
 const EMPTY_ERRORS: FieldErrors = {}
 
@@ -577,6 +611,8 @@ type DraftApi = {
   errors: FieldErrors
   setConfig: (mutate: (config: PresetConfig) => PresetConfig) => void
   setText: (field: TextField, value: string) => void
+  /** 导入预设只读：所有可编辑控件从这里取 disabled / readOnly */
+  readOnly: boolean
 }
 
 type PanelProps = { draft: Draft; api: DraftApi }
@@ -618,10 +654,12 @@ const Switch = ({
   checked,
   label,
   onChange,
+  disabled = false,
 }: {
   checked: boolean
   label: string
   onChange: (checked: boolean) => void
+  disabled?: boolean
 }) => (
   <button
     type="button"
@@ -629,6 +667,7 @@ const Switch = ({
     aria-checked={checked}
     aria-label={label}
     className={clsx(styles.switch, checked && styles.switchOn)}
+    disabled={disabled}
     onClick={() => onChange(!checked)}
   >
     <span className={styles.switchThumb} aria-hidden="true" />
@@ -639,14 +678,16 @@ const SwitchField = ({
   label,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string
   checked: boolean
   onChange: (checked: boolean) => void
+  disabled?: boolean
 }) => (
   <div className={styles.switchRow}>
     <div className={styles.fieldLabel}>{label}</div>
-    <Switch checked={checked} label={label} onChange={onChange} />
+    <Switch checked={checked} label={label} onChange={onChange} disabled={disabled} />
   </div>
 )
 
@@ -666,6 +707,12 @@ const NumberField = ({
   const id = useId()
   const rule = NUMBER_RULES[field]
   const error = api.errors[field]
+  const defaultText = SYSTEM_DEFAULT_NUMBER_TEXT[field]
+  const placeholder = isDefaultPresetDraft(draft)
+    ? t('presetDefaultValue', { value: defaultText ?? t('presetDefaultEmpty') })
+    : draft.builtin
+      ? t('presetUseSystemDefault')
+      : undefined
   return (
     <Field label={label} htmlFor={id} error={error ? t(error.key, error.params) : undefined}>
       <input
@@ -677,7 +724,8 @@ const NumberField = ({
         min={rule.optional ? undefined : rule.min}
         max={rule.optional ? undefined : rule.max}
         value={draft.text[field]}
-        placeholder={draft.builtin ? t('presetUseSystemDefault') : undefined}
+        placeholder={placeholder}
+        readOnly={api.readOnly}
         aria-invalid={error ? true : undefined}
         onChange={(event) => api.setText(field, event.target.value)}
       />
@@ -813,6 +861,8 @@ export const PresetSection = () => {
         name: presetName(preset.id, config.name, builtin),
         meta: presetMeta(config),
         builtin,
+        // 导入包只读：标签上显示「导入」徽标，选中后编辑器进入只读态
+        imported: preset.source === 'imported',
         dirty: draft?.dirty ?? false,
         stored: true,
       }
@@ -826,6 +876,7 @@ export const PresetSection = () => {
           name: draft?.config.name ?? t('presetNewDefaultName'),
           meta: draft ? presetMeta(draft.config) : '',
           builtin: draft?.builtin ?? false,
+          imported: false,
           dirty: draft?.dirty ?? false,
           stored: false,
         }
@@ -834,6 +885,10 @@ export const PresetSection = () => {
   const selected = selectedId ? (drafts[selectedId] ?? null) : null
   const selectedStored = selectedId !== null && presets.some((preset) => preset.id === selectedId)
   const selectedBuiltin = selected?.builtin ?? false
+  /** 导入的预设只读（默认预设与用户自建预设不受影响） */
+  const selectedImported =
+    selectedId !== null &&
+    presets.some((preset) => preset.id === selectedId && preset.source === 'imported')
   const isActive = selectedId !== null && selectedId === activeId
   const errors =
     selected && selectedId && showErrors[selectedId] ? validateDraft(selected) : EMPTY_ERRORS
@@ -874,9 +929,45 @@ export const PresetSection = () => {
     setSaveStatus(null)
   }
 
+  /**
+   * 从导入预设复制一份可编辑副本：去掉 zip 资源引用（icon / license / system_prompt_file
+   * 只能来自导入包，新预设没有对应文件内容），提示词用已合并的文本；保存后就成为自建预设。
+   */
+  const copyAsNew = () => {
+    const id = selectedId
+    const draft = id ? draftsRef.current[id] : undefined
+    if (!id || !draft) {
+      return
+    }
+    const base: PresetConfig = { ...draft.config }
+    delete base.icon
+    delete base.license
+    delete base.system_prompt_file
+    delete base.builtin
+    let nextId = `custom-${Date.now().toString(36)}`
+    let suffix = 1
+    while (
+      draftsRef.current[nextId] ||
+      presetsRef.current.some((preset) => preset.id === nextId)
+    ) {
+      suffix += 1
+      nextId = `custom-${Date.now().toString(36)}-${suffix}`
+    }
+    const config: PresetConfig = {
+      ...base,
+      id: nextId,
+      name: t('presetCopyName', { name: draft.config.name }),
+    }
+    setDrafts((prev) => ({ ...prev, [nextId]: draftFromConfig(config, true) }))
+    setExtraIds((prev) => [...prev, nextId])
+    setSelectedId(nextId)
+    setSaveStatus(null)
+  }
+
   const patchConfig = (mutate: (config: PresetConfig) => PresetConfig) => {
     const id = selectedId
-    if (!id) {
+    // 导入预设只读：字段已禁用，这里再兜底拒绝写入草稿
+    if (!id || selectedImported) {
       return
     }
     setDrafts((prev) => {
@@ -890,7 +981,7 @@ export const PresetSection = () => {
 
   const patchText = (field: TextField, value: string) => {
     const id = selectedId
-    if (!id) {
+    if (!id || selectedImported) {
       return
     }
     setDrafts((prev) => {
@@ -1018,7 +1109,12 @@ export const PresetSection = () => {
     }
   }
 
-  const api: DraftApi = { errors, setConfig: patchConfig, setText: patchText }
+  const api: DraftApi = {
+    errors,
+    setConfig: patchConfig,
+    setText: patchText,
+    readOnly: selectedImported,
+  }
   const status = importStatus ?? saveStatus
 
   return (
@@ -1096,6 +1192,9 @@ export const PresetSection = () => {
                     {tab.builtin ? (
                       <span className={styles.tabBadge}>{t('presetBuiltinBadge')}</span>
                     ) : null}
+                    {tab.imported ? (
+                      <span className={styles.tabBadge}>{t('presetImportedBadge')}</span>
+                    ) : null}
                     {tab.id === activeId ? (
                       <span className={styles.tabBadge}>{t('presetActive')}</span>
                     ) : null}
@@ -1153,13 +1252,24 @@ export const PresetSection = () => {
                         : 'presetRestore'
                     )}
                   </Button>
-                  <Button
-                    size="m"
-                    disabled={!selected.dirty || saving || pending !== null}
-                    onClick={() => void save()}
-                  >
-                    {t(saving ? 'presetSaving' : 'presetSave')}
-                  </Button>
+                  {selectedImported ? (
+                    <Button
+                      variant="outlined"
+                      size="m"
+                      disabled={saving || pending !== null}
+                      onClick={copyAsNew}
+                    >
+                      {t('presetCopyAsNew')}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="m"
+                      disabled={!selected.dirty || saving || pending !== null}
+                      onClick={() => void save()}
+                    >
+                      {t(saving ? 'presetSaving' : 'presetSave')}
+                    </Button>
+                  )}
                   <Button
                     variant="dangerOutlined"
                     size="m"
@@ -1178,6 +1288,12 @@ export const PresetSection = () => {
                   </Button>
                 </div>
               </div>
+              {selectedImported ? (
+                <div className={styles.importedNote} role="note">
+                  <span className={styles.tabBadge}>{t('presetImportedBadge')}</span>
+                  <span>{t('presetImportedReadOnly')}</span>
+                </div>
+              ) : null}
               <DraftEditor draft={selected} api={api} />
             </>
           ) : selectedId ? (
@@ -1301,6 +1417,7 @@ const BasicPanel = ({ draft, api }: PanelProps) => {
           id={`${id}-name`}
           className={clsx(styles.input, nameError && styles.inputInvalid)}
           value={config.name}
+          readOnly={api.readOnly}
           aria-invalid={nameError ? true : undefined}
           onChange={(event) =>
             api.setConfig((current) => ({ ...current, name: event.target.value }))
@@ -1315,6 +1432,7 @@ const BasicPanel = ({ draft, api }: PanelProps) => {
           rows={2}
           value={config.description ?? ''}
           placeholder={optionalPlaceholder}
+          readOnly={api.readOnly}
           onChange={(event) =>
             api.setConfig((current) => ({ ...current, description: event.target.value }))
           }
@@ -1327,6 +1445,7 @@ const BasicPanel = ({ draft, api }: PanelProps) => {
             className={styles.input}
             value={config.author ?? ''}
             placeholder={optionalPlaceholder}
+            readOnly={api.readOnly}
             onChange={(event) =>
               api.setConfig((current) => ({ ...current, author: event.target.value }))
             }
@@ -1338,6 +1457,7 @@ const BasicPanel = ({ draft, api }: PanelProps) => {
             className={styles.input}
             value={config.version ?? ''}
             placeholder={optionalPlaceholder}
+            readOnly={api.readOnly}
             onChange={(event) =>
               api.setConfig((current) => ({ ...current, version: event.target.value }))
             }
@@ -1358,6 +1478,7 @@ const BasicPanel = ({ draft, api }: PanelProps) => {
           placeholder={
             builtin ? t('presetUseSystemDefault') : t('presetCopyrightPlaceholder')
           }
+          readOnly={api.readOnly}
           aria-invalid={copyrightError ? true : undefined}
           onChange={(event) =>
             api.setConfig((current) => ({ ...current, copyright: event.target.value }))
@@ -1382,6 +1503,7 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
   const t = useTranslate()
   const id = useId()
   const { config, builtin } = draft
+  const defaultDraft = isDefaultPresetDraft(draft)
   const baseUrlError = api.errors.base_url
   const modelError = api.errors.model
   const apiKey = useSettings((state) => state.apiKey)
@@ -1410,8 +1532,27 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
     }
   }
   const protocolOptions: SelectOption<string>[] = builtin
-    ? [{ value: '', label: t('presetUseSystemDefault') }, ...PROTOCOL_OPTIONS]
+    ? [
+        {
+          value: '',
+          // 默认预设：直接显示当前生效的协议；其它内置包用通用文案
+          label: defaultDraft
+            ? t('presetDefaultValue', { value: SYSTEM_DEFAULT_PRESET.protocol })
+            : t('presetUseSystemDefault'),
+        },
+        ...PROTOCOL_OPTIONS,
+      ]
     : PROTOCOL_OPTIONS
+  const baseUrlPlaceholder = defaultDraft
+    ? t('presetDefaultValue', { value: SYSTEM_DEFAULT_PRESET.base_url })
+    : builtin
+      ? t('presetUseSystemDefault')
+      : undefined
+  const modelPlaceholder = defaultDraft
+    ? t('presetDefaultValue', { value: SYSTEM_DEFAULT_PRESET.model })
+    : builtin
+      ? t('presetUseSystemDefault')
+      : undefined
   return (
     <div className={styles.panelBody}>
       {builtin ? <div className={styles.note}>{t('presetDefaultFieldsHint')}</div> : null}
@@ -1422,6 +1563,7 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
           value={config.protocol ?? ''}
           placeholder={t('presetUseSystemDefault')}
           options={protocolOptions}
+          disabled={api.readOnly}
           onChange={(protocol) =>
             api.setConfig((current) => ({
               ...current,
@@ -1442,7 +1584,8 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
           inputMode="url"
           spellCheck={false}
           value={config.base_url ?? ''}
-          placeholder={builtin ? t('presetUseSystemDefault') : undefined}
+          placeholder={baseUrlPlaceholder}
+          readOnly={api.readOnly}
           aria-invalid={baseUrlError ? true : undefined}
           onChange={(event) =>
             api.setConfig((current) => ({ ...current, base_url: event.target.value }))
@@ -1461,7 +1604,8 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
             spellCheck={false}
             list={modelListId}
             value={config.model ?? ''}
-            placeholder={builtin ? t('presetUseSystemDefault') : undefined}
+            placeholder={modelPlaceholder}
+            readOnly={api.readOnly}
             aria-invalid={modelError ? true : undefined}
             onChange={(event) =>
               api.setConfig((current) => ({ ...current, model: event.target.value }))
@@ -1470,7 +1614,7 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
           <Button
             variant="outlined"
             size="s"
-            disabled={modelListState === 'loading'}
+            disabled={api.readOnly || modelListState === 'loading'}
             onClick={loadModelList}
           >
             {modelListState === 'loading'
@@ -1490,6 +1634,7 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
             value={config.model ?? ''}
             placeholder={t('presetModelListSelect')}
             options={models.map((model) => ({ value: model, label: model }))}
+            disabled={api.readOnly}
             onChange={(model) => api.setConfig((current) => ({ ...current, model }))}
           />
         ) : null}
@@ -1511,6 +1656,12 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
 const ParamsPanel = ({ draft, api }: PanelProps) => {
   const t = useTranslate()
   const stopId = useId()
+  const defaultDraft = isDefaultPresetDraft(draft)
+  const stopPlaceholder = defaultDraft
+    ? t('presetDefaultValue', { value: t('presetDefaultEmpty') })
+    : draft.builtin
+      ? t('presetUseSystemDefault')
+      : undefined
   const reasoningOptions: SelectOption<string>[] = [
     { value: '', label: t('presetReasoningEffortNone') },
     ...REASONING_EFFORTS.map((effort) => ({ value: effort, label: effort })),
@@ -1546,6 +1697,8 @@ const ParamsPanel = ({ draft, api }: PanelProps) => {
           className={styles.input}
           spellCheck={false}
           value={draft.text.stop}
+          placeholder={stopPlaceholder}
+          readOnly={api.readOnly}
           onChange={(event) => api.setText('stop', event.target.value)}
         />
       </Field>
@@ -1555,6 +1708,7 @@ const ParamsPanel = ({ draft, api }: PanelProps) => {
           className={styles.select}
           value={draft.config.params?.reasoning_effort ?? ''}
           options={reasoningOptions}
+          disabled={api.readOnly}
           onChange={(value) =>
             api.setConfig((current) => ({
               ...current,
@@ -1567,11 +1721,42 @@ const ParamsPanel = ({ draft, api }: PanelProps) => {
   )
 }
 
-/** 提示词：留空使用应用自带；显示字数 */
+/** 提示词：留空使用应用自带；显示字数；支持 {{preset.*}} / {{env.*}} 模板变量 */
 const PromptPanel = ({ draft, api }: PanelProps) => {
   const t = useTranslate()
   const id = useId()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const prompt = draft.config.system_prompt ?? ''
+  const defaultDraft = isDefaultPresetDraft(draft)
+  // 默认预设：空 textarea 直接显示应用自带提示词的首行，用户能看出留空实际会发什么
+  const placeholder = defaultDraft
+    ? t('presetUseBuiltinPrompt', { preview: APP_PROMPT_PREVIEW })
+    : draft.builtin
+      ? t('presetUseSystemDefault')
+      : undefined
+  /** 在光标处插入模板变量；插入后把光标放到变量后面继续输入 */
+  const insertVariable = (variable: string) => {
+    if (api.readOnly) {
+      return
+    }
+    const token = `{{${variable}}}`
+    const textarea = textareaRef.current
+    const start = textarea?.selectionStart ?? prompt.length
+    const end = textarea?.selectionEnd ?? start
+    api.setConfig((current) => ({
+      ...current,
+      system_prompt: `${prompt.slice(0, start)}${token}${prompt.slice(end)}`,
+    }))
+    const caret = start + token.length
+    requestAnimationFrame(() => {
+      const element = textareaRef.current
+      if (!element) {
+        return
+      }
+      element.focus()
+      element.setSelectionRange(caret, caret)
+    })
+  }
   return (
     <div className={styles.panelBody}>
       <div className={styles.note}>{t('presetPromptNote')}</div>
@@ -1582,16 +1767,36 @@ const PromptPanel = ({ draft, api }: PanelProps) => {
       >
         <textarea
           id={id}
+          ref={textareaRef}
           className={styles.textarea}
           rows={10}
           spellCheck={false}
           value={prompt}
-          placeholder={draft.builtin ? t('presetUseSystemDefault') : undefined}
+          placeholder={placeholder}
+          readOnly={api.readOnly}
           onChange={(event) =>
             api.setConfig((current) => ({ ...current, system_prompt: event.target.value }))
           }
         />
       </Field>
+      <div className={styles.note}>{t('presetPromptTemplateNote')}</div>
+      <div
+        className={styles.templateVars}
+        role="group"
+        aria-label={t('presetPromptTemplateVarsLabel')}
+      >
+        {PRESET_TEMPLATE_VARIABLES.map((variable) => (
+          <Button
+            key={variable}
+            variant="outlined"
+            size="s"
+            disabled={api.readOnly}
+            onClick={() => insertVariable(variable)}
+          >
+            {`{{${variable}}}`}
+          </Button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -1599,6 +1804,7 @@ const PromptPanel = ({ draft, api }: PanelProps) => {
 /** 记忆：只读列表来自 services/memory/store.ts（subscribeMemory + listMemories / searchMemories） */
 const MemoryPanel = ({ draft, api }: PanelProps) => {
   const t = useTranslate()
+  const defaultDraft = isDefaultPresetDraft(draft)
   const memory = useSyncExternalStore(subscribeMemory, getMemoryState)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<MemoryEntry[] | null>(null)
@@ -1670,6 +1876,7 @@ const MemoryPanel = ({ draft, api }: PanelProps) => {
       <SwitchField
         label={t('presetMemoryEnabled')}
         checked={draft.config.memory?.enabled ?? DEFAULT_PRESET_MEMORY.enabled}
+        disabled={api.readOnly}
         onChange={(enabled) =>
           api.setConfig((current) => ({
             ...current,
@@ -1683,6 +1890,16 @@ const MemoryPanel = ({ draft, api }: PanelProps) => {
         api={api}
         draft={draft}
       />
+      {defaultDraft ? (
+        <div className={styles.note}>
+          {t('presetMemoryDefaultHint', {
+            state: SYSTEM_DEFAULT_PRESET.memory.enabled
+              ? t('presetDefaultOn')
+              : t('presetDefaultOff'),
+            maxResults: SYSTEM_DEFAULT_PRESET.memory.max_results,
+          })}
+        </div>
+      ) : null}
       <div className={styles.note}>{t('presetMemoryNote')}</div>
       <div className={styles.memoryHeader}>
         <div className={styles.fieldLabel}>{t('presetMemoryListLabel')}</div>
@@ -1763,11 +1980,14 @@ const CompactionPanel = ({ draft, api }: PanelProps) => {
   const t = useTranslate()
   const id = useId()
   const { config } = draft
+  const defaultDraft = isDefaultPresetDraft(draft)
+  const defaultCompaction = SYSTEM_DEFAULT_PRESET.compaction
   return (
     <div className={styles.panelBody}>
       <SwitchField
         label={t('presetCompactionEnabled')}
         checked={config.compaction?.enabled ?? DEFAULT_PRESET_COMPACTION.enabled}
+        disabled={api.readOnly}
         onChange={(enabled) =>
           api.setConfig((current) => ({
             ...current,
@@ -1789,6 +2009,15 @@ const CompactionPanel = ({ draft, api }: PanelProps) => {
           draft={draft}
         />
       </div>
+      {defaultDraft ? (
+        <div className={styles.note}>
+          {t('presetCompactionDefaultHint', {
+            state: defaultCompaction.enabled ? t('presetDefaultOn') : t('presetDefaultOff'),
+            triggerTokens: defaultCompaction.trigger_tokens,
+            keepRecent: defaultCompaction.keep_recent_messages,
+          })}
+        </div>
+      ) : null}
       <Field
         label={t('presetCompactionPrompt')}
         htmlFor={id}
@@ -1801,6 +2030,7 @@ const CompactionPanel = ({ draft, api }: PanelProps) => {
           spellCheck={false}
           value={config.compaction?.prompt ?? ''}
           placeholder={draft.builtin ? t('presetUseSystemDefault') : undefined}
+          readOnly={api.readOnly}
           onChange={(event) =>
             api.setConfig((current) => ({
               ...current,

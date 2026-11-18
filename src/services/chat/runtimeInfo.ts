@@ -1,12 +1,25 @@
 /**
- * 运行时环境元信息：告诉模型当前运行平台、应用版本、界面语言、主题与本地时间。
+ * 运行时环境元信息：告诉模型当前运行平台、应用版本、界面语言与主题。
  *
- * 只在构造请求的 system 提示词时现算（时间会变），不写进会话消息或历史。
+ * 只在构造请求的 system 提示词时现算，不写进会话消息或历史。
  * 缺失字段（拿不到版本、没有 matchMedia 等）优雅降级，绝不抛错影响聊天。
+ *
+ * 注意：这里**不写本地时间**。system 提示词是请求前缀，写入时间会让同一环境下的
+ * 前后请求前缀不再一致，KV cache 每轮都失效；需要展示时间的地方用会话消息，不要用提示词。
  */
 import { useSettings } from '../settings.js'
 
 export type RuntimePlatform = 'android' | 'ios' | 'desktop' | 'web'
+
+/** 一次请求里的运行时环境快照：也用于系统提示词模板的 `{{env.*}}` 变量 */
+export type RuntimeEnv = {
+  platform: RuntimePlatform
+  app: string
+  /** 构建时写入的版本号；拿不到时省略（模板里 `{{env.version}}` 保留原样） */
+  version?: string
+  locale: string
+  theme: 'light' | 'dark'
+}
 
 type CapacitorGlobal = {
   Capacitor?: { getPlatform?: () => string | undefined }
@@ -85,7 +98,10 @@ const readTheme = (): 'light' | 'dark' => {
   return 'light'
 }
 
-/** 本地时间的 ISO 8601（保留 +08:00 这类时区偏移，而不是统一换算成 UTC） */
+/**
+ * 本地时间的 ISO 8601（保留 +08:00 这类时区偏移，而不是统一换算成 UTC）。
+ * 保留给需要展示时间的地方使用；**不要写进 system 提示词**（会破坏 KV cache 前缀）。
+ */
 export const formatIsoWithOffset = (date = new Date()): string => {
   const pad = (value: number) => String(value).padStart(2, '0')
   const offsetMinutes = -date.getTimezoneOffset()
@@ -97,19 +113,30 @@ export const formatIsoWithOffset = (date = new Date()): string => {
   )}`
 }
 
+/** 现算一次运行时环境快照（平台 / 应用名 / 版本 / 语言 / 主题，不含时间） */
+export const readRuntimeEnv = (): RuntimeEnv => {
+  const version = readAppVersion()
+  return {
+    platform: detectPlatform(),
+    app: 'Aurora Chat',
+    ...(version ? { version } : {}),
+    locale: readLocale(),
+    theme: readTheme(),
+  }
+}
+
 /**
  * 稳定格式（单行，字段用中文分号分隔；version 缺失时整段省略）：
- * `运行环境：platform=web；app=Aurora Chat；version=0.2.1；locale=zh-CN；theme=light；time=2026-11-18T00:40:00+08:00`
+ * `运行环境：platform=web；app=Aurora Chat；version=0.2.1；locale=zh-CN；theme=light`
+ * 字段顺序固定、不含时间，保证同一环境下前后请求的提示词前缀一致（KV cache 友好）。
  */
-export const runtimeMeta = (): string => {
-  const version = readAppVersion()
+export const runtimeMeta = (env: RuntimeEnv = readRuntimeEnv()): string => {
   const fields = [
-    `platform=${detectPlatform()}`,
-    'app=Aurora Chat',
-    ...(version ? [`version=${version}`] : []),
-    `locale=${readLocale()}`,
-    `theme=${readTheme()}`,
-    `time=${formatIsoWithOffset()}`,
+    `platform=${env.platform}`,
+    `app=${env.app}`,
+    ...(env.version ? [`version=${env.version}`] : []),
+    `locale=${env.locale}`,
+    `theme=${env.theme}`,
   ]
   return `运行环境：${fields.join('；')}`
 }

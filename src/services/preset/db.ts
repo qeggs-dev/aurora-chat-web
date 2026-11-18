@@ -1,6 +1,12 @@
 /** 预设的 IndexedDB 存储：独立一个库，避免牵动聊天与样式包的 schema。 */
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import { isBuiltinPreset, resolvePreset, type PresetConfig, type PresetSummary } from './types.js'
+import {
+  isBuiltinPreset,
+  resolvePreset,
+  type PresetConfig,
+  type PresetSource,
+  type PresetSummary,
+} from './types.js'
 
 export type StoredPreset = {
   id: string
@@ -13,6 +19,8 @@ export type StoredPreset = {
   importedAt: number
   /** 内置预设（默认预设 / 内置演示包）：不可删除，导入不能覆盖 */
   builtin?: boolean
+  /** 来源：`imported` 为 zip 导入包（只读）；缺省（旧记录）按 created 处理 */
+  source?: PresetSource
 }
 
 interface PresetDB extends DBSchema {
@@ -59,6 +67,8 @@ export const summarize = (preset: StoredPreset, iconUrl?: string): PresetSummary
     model: resolved.model,
     iconUrl,
     importedAt: preset.importedAt,
+    // 只把 imported 透传给 UI（列表 / 详情据此加徽标并禁用编辑）；其余按 created 处理
+    ...(preset.source === 'imported' ? { source: 'imported' as const } : {}),
     builtin: preset.builtin === true || isBuiltinPreset(preset.config) ? true : undefined,
   }
 }
