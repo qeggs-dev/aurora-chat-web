@@ -50,7 +50,10 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const t = useTranslate()
   const draft = useDrafts((state) => state.drafts.get(sessionId) ?? EMPTY_DRAFT)
   const { text, attachments } = draft
-  const setText = (value: string) => setDraftText(sessionId, value)
+  const setText = useCallback(
+    (value: string) => setDraftText(sessionId, value),
+    [sessionId]
+  )
   const draftReady = useUploads((state) => prepareDraftMessage(draft, state.tasks) !== null)
   const streaming = useChatStore(
     (state) => sessionId !== null && Object.hasOwn(state.streaming, sessionId)
@@ -144,6 +147,36 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       setText(field.value)
     }
   }
+
+  // 以输入框 DOM 值为准：原生监听 input / composition / change / focus，
+  // 兜住 Android WebView 进程重启、输入法合成等场景下 React 合成事件丢失导致的
+  // 「DOM 有字、state 为空、发送按钮灰」问题。
+  useEffect(() => {
+    const field = textareaRef.current
+    if (!field) {
+      return
+    }
+    const sync = () => {
+      const value = field.value
+      if (value !== getDraft(sessionId).text) {
+        setText(value)
+      }
+    }
+    field.addEventListener('input', sync, true)
+    field.addEventListener('compositionend', sync, true)
+    field.addEventListener('change', sync, true)
+    field.addEventListener('focus', sync, true)
+    document.addEventListener('visibilitychange', sync)
+    const timer = window.setTimeout(sync, 0)
+    return () => {
+      field.removeEventListener('input', sync, true)
+      field.removeEventListener('compositionend', sync, true)
+      field.removeEventListener('change', sync, true)
+      field.removeEventListener('focus', sync, true)
+      document.removeEventListener('visibilitychange', sync)
+      window.clearTimeout(timer)
+    }
+  }, [sessionId, setText])
 
   const send = () => {
     // 兜底：如果输入框里的文字还没同步进草稿（WebView/输入法事件丢失），先同步再提交
