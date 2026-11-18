@@ -34,6 +34,7 @@ import { showToast } from '../base/toastState.js'
 import settingsStyles from './Settings.module.css'
 import styles from './StyleSection.module.css'
 import { StylePackEffects } from './StylePackEffects.js'
+import { useStyleLabels } from '../style-editor/labels.js'
 
 /** 样式分组的调色板图标：与设置弹窗里的 InfoIcon 一样用 16px 内联 SVG */
 export const StyleIcon = () => (
@@ -190,7 +191,7 @@ const DetailChips = ({ items, empty }: { items: string[]; empty: string }) =>
   ) : (
     <span className={styles.detailChips}>
       {items.map((item) => (
-        <span key={item} className={styles.detailChip}>
+        <span key={item} className={styles.detailChip} data-technical>
           {item}
         </span>
       ))}
@@ -245,6 +246,7 @@ const StylePackDetailContent = ({
   onDelete: () => void
 }) => {
   const t = useTranslate()
+  const labels = useStyleLabels()
   const locale = useSettings((state) => state.locale)
   const theme = useTheme()
   const manifest = pack.manifest
@@ -256,6 +258,23 @@ const StylePackDetailContent = ({
   ]
     .filter(Boolean)
     .join(' · ')
+
+  /** 参数展示值：fit / align / render 是技术枚举，界面显示本地化文案（原始值留在 data-* 属性里） */
+  const paramDisplay = (
+    key: 'alpha' | 'exposure' | 'fit' | 'align' | 'position' | 'render',
+    entry: StyleAssetEntry
+  ): string => {
+    if (key === 'fit') {
+      return labels.fit(assetParam(entry, 'fit'))
+    }
+    if (key === 'align') {
+      return labels.align(assetParam(entry, 'align'))
+    }
+    if (key === 'render') {
+      return labels.render(assetParam(entry, 'render'))
+    }
+    return assetParam(entry, key)
+  }
 
   /** 包图标 / 封面在亮/暗主题的清单展示：“亮色主题 · assets/…”，旧包只写 file 时两个主题都会列出 */
   const themedFileChips = (ref: StyleFileRef | undefined): string[] =>
@@ -332,7 +351,9 @@ const StylePackDetailContent = ({
             )}
           </DetailRow>
           <DetailRow label={t('stylePackDetailId')}>
-            <code className={styles.detailCode}>{pack.id}</code>
+            <code className={styles.detailCode} data-technical>
+              {pack.id}
+            </code>
           </DetailRow>
           <DetailRow label={t('stylePackDetailImportedAt')}>{importedAt}</DetailRow>
           <DetailRow label={t('stylePackDetailStatus')}>
@@ -409,7 +430,9 @@ const StylePackDetailContent = ({
             <span className={styles.detailResourceLabel}>{t('stylePackDetailLicenseFile')}</span>
             <span className={styles.detailResourceValue}>
               {manifest.license ? (
-                <code className={styles.detailCode}>{manifest.license.file}</code>
+                <code className={styles.detailCode} data-technical>
+                  {manifest.license.file}
+                </code>
               ) : (
                 <span className={styles.detailMuted}>{t('stylePackDetailNotProvided')}</span>
               )}
@@ -434,35 +457,33 @@ const StylePackDetailContent = ({
                   <span className={styles.detailParamTheme}>{t(label)}</span>
                 </div>
                 <div className={styles.detailParamGrid}>
-                  {(
-                    [
-                      ['alpha', assetParam(asset.entry, 'alpha')],
-                      ['exposure', assetParam(asset.entry, 'exposure')],
-                      ['fit', assetParam(asset.entry, 'fit')],
-                      ['align', assetParam(asset.entry, 'align')],
-                      ['position', assetParam(asset.entry, 'position')],
-                      ['render', assetParam(asset.entry, 'render')],
-                    ] as const
-                  ).map(([key, value]) => (
-                    <div key={key} className={styles.detailParam}>
-                      <span className={styles.detailParamKey}>
-                        {t(
-                          key === 'alpha'
-                            ? 'stylePackDetailAlpha'
-                            : key === 'exposure'
-                              ? 'stylePackDetailExposure'
-                              : key === 'fit'
-                                ? 'stylePackDetailFit'
-                                : key === 'align'
-                                  ? 'stylePackDetailAlign'
-                                  : key === 'position'
-                                    ? 'stylePackDetailPosition'
-                                    : 'stylePackDetailRender'
-                        )}
-                      </span>
-                      <span className={styles.detailParamValue}>{value}</span>
-                    </div>
-                  ))}
+                  {(['alpha', 'exposure', 'fit', 'align', 'position', 'render'] as const).map(
+                    (key) => (
+                      <div key={key} className={styles.detailParam}>
+                        <span className={styles.detailParamKey}>
+                          {t(
+                            key === 'alpha'
+                              ? 'stylePackDetailAlpha'
+                              : key === 'exposure'
+                                ? 'stylePackDetailExposure'
+                                : key === 'fit'
+                                  ? 'stylePackDetailFit'
+                                  : key === 'align'
+                                    ? 'stylePackDetailAlign'
+                                    : key === 'position'
+                                      ? 'stylePackDetailPosition'
+                                      : 'stylePackDetailRender'
+                          )}
+                        </span>
+                        <span
+                          className={styles.detailParamValue}
+                          data-raw-value={assetParam(asset.entry, key)}
+                        >
+                          {paramDisplay(key, asset.entry)}
+                        </span>
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
             ))
@@ -522,7 +543,9 @@ const StylePackDetailContent = ({
                           style={{ backgroundColor: value }}
                           aria-hidden="true"
                         />
-                        <span className={styles.paletteToken}>{key}</span>
+                        <span className={styles.paletteToken} title={key} data-raw-token={key}>
+                          {labels.palette(key)}
+                        </span>
                         <span className={styles.paletteValue}>{value}</span>
                       </div>
                     )

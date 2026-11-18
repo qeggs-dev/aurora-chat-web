@@ -2,16 +2,22 @@
  * 样式包编辑模式的 effects 编辑器：按组开关 + 数值 / 颜色输入。
  * 取值范围与默认值沿用 docs/style-packs.md 与 `types.ts` 的 EFFECT_DEFAULTS / TILT_DEFAULTS，
  * 非法值由 `editor.ts` 的校验在保存 / 导出时拦下。
+ *
+ * 效果组名与字段名统一走 `labels.ts` 的本地化文案（效果组 / 字段的技术值只用于数据与
+ * `data-*` 属性），详情页、悬浮面板、元数据编辑共用同一套映射。
  */
-import { EFFECT_DEFAULTS, TILT_DEFAULTS, type StyleEffects } from '../../services/style/types.js'
-import { useTranslate } from '../../i18n/index.js'
 import clsx from 'clsx'
+import { useTranslate, type TranslationKey } from '../../i18n/index.js'
+import { EFFECT_DEFAULTS, TILT_DEFAULTS, type StyleEffects } from '../../services/style/types.js'
+import { useStyleLabels } from './labels.js'
 import styles from './StyleEditMode.module.css'
 
 type FieldKind = 'number' | 'color'
 
 type EffectField = {
+  /** 清单里的技术字段名（提交时原样写入 effects） */
   key: string
+  labelKey: TranslationKey
   kind: FieldKind
   min?: number
   max?: number
@@ -33,84 +39,162 @@ export type EffectGroupKey =
 
 type EffectGroup = {
   key: EffectGroupKey
-  /** 分组标题直接用清单里的字段名（技术标识，不翻译） */
-  label: string
+  /** 本地化组名 key */
+  labelKey: TranslationKey
   scalar?: ScalarSpec
   fields?: EffectField[]
   defaults?: Record<string, number | string>
 }
 
 const EFFECT_GROUPS: Record<EffectGroupKey, EffectGroup> = {
-  opacity: { key: 'opacity', label: 'opacity', scalar: { min: 0, max: 1, step: 0.05, defaultValue: 1 } },
+  opacity: {
+    key: 'opacity',
+    labelKey: 'styleEffectGroupOpacity',
+    scalar: { min: 0, max: 1, step: 0.05, defaultValue: 1 },
+  },
   shadow: {
     key: 'shadow',
-    label: 'shadow',
+    labelKey: 'styleEffectGroupShadow',
     fields: [
-      { key: 'x', kind: 'number', min: -100, max: 100, step: 1 },
-      { key: 'y', kind: 'number', min: -100, max: 100, step: 1 },
-      { key: 'blur', kind: 'number', min: 0, max: 100, step: 1 },
-      { key: 'color', kind: 'color' },
+      { key: 'x', labelKey: 'styleEffectFieldX', kind: 'number', min: -100, max: 100, step: 1 },
+      { key: 'y', labelKey: 'styleEffectFieldY', kind: 'number', min: -100, max: 100, step: 1 },
+      { key: 'blur', labelKey: 'styleEffectFieldBlur', kind: 'number', min: 0, max: 100, step: 1 },
+      { key: 'color', labelKey: 'styleEffectFieldColor', kind: 'color' },
     ],
     defaults: { ...EFFECT_DEFAULTS.shadow },
   },
   outerGlow: {
     key: 'outerGlow',
-    label: 'outerGlow',
+    labelKey: 'styleEffectGroupOuterGlow',
     fields: [
-      { key: 'radius', kind: 'number', min: 0, max: 50, step: 1 },
-      { key: 'intensity', kind: 'number', min: 0, max: 1, step: 0.05 },
-      { key: 'color', kind: 'color' },
+      {
+        key: 'radius',
+        labelKey: 'styleEffectFieldRadius',
+        kind: 'number',
+        min: 0,
+        max: 50,
+        step: 1,
+      },
+      {
+        key: 'intensity',
+        labelKey: 'styleEffectFieldIntensity',
+        kind: 'number',
+        min: 0,
+        max: 1,
+        step: 0.05,
+      },
+      { key: 'color', labelKey: 'styleEffectFieldColor', kind: 'color' },
     ],
     defaults: { ...EFFECT_DEFAULTS.outerGlow },
   },
   innerGlow: {
     key: 'innerGlow',
-    label: 'innerGlow',
+    labelKey: 'styleEffectGroupInnerGlow',
     fields: [
-      { key: 'radius', kind: 'number', min: 0, max: 50, step: 1 },
-      { key: 'intensity', kind: 'number', min: 0, max: 1, step: 0.05 },
-      { key: 'color', kind: 'color' },
+      {
+        key: 'radius',
+        labelKey: 'styleEffectFieldRadius',
+        kind: 'number',
+        min: 0,
+        max: 50,
+        step: 1,
+      },
+      {
+        key: 'intensity',
+        labelKey: 'styleEffectFieldIntensity',
+        kind: 'number',
+        min: 0,
+        max: 1,
+        step: 0.05,
+      },
+      { key: 'color', labelKey: 'styleEffectFieldColor', kind: 'color' },
     ],
     defaults: { ...EFFECT_DEFAULTS.innerGlow },
   },
   emboss: {
     key: 'emboss',
-    label: 'emboss',
+    labelKey: 'styleEffectGroupEmboss',
     fields: [
-      { key: 'depth', kind: 'number', min: 0, max: 10, step: 0.5 },
-      { key: 'angle', kind: 'number', min: 0, max: 360, step: 5 },
-      { key: 'intensity', kind: 'number', min: 0, max: 1, step: 0.05 },
+      {
+        key: 'depth',
+        labelKey: 'styleEffectFieldDepth',
+        kind: 'number',
+        min: 0,
+        max: 10,
+        step: 0.5,
+      },
+      {
+        key: 'angle',
+        labelKey: 'styleEffectFieldAngle',
+        kind: 'number',
+        min: 0,
+        max: 360,
+        step: 5,
+      },
+      {
+        key: 'intensity',
+        labelKey: 'styleEffectFieldIntensity',
+        kind: 'number',
+        min: 0,
+        max: 1,
+        step: 0.05,
+      },
     ],
     defaults: { ...EFFECT_DEFAULTS.emboss },
   },
   stroke: {
     key: 'stroke',
-    label: 'stroke',
+    labelKey: 'styleEffectGroupStroke',
     fields: [
-      { key: 'width', kind: 'number', min: 0, max: 20, step: 1 },
-      { key: 'color', kind: 'color' },
+      { key: 'width', labelKey: 'styleEffectFieldWidth', kind: 'number', min: 0, max: 20, step: 1 },
+      { key: 'color', labelKey: 'styleEffectFieldColor', kind: 'color' },
     ],
     defaults: { ...EFFECT_DEFAULTS.stroke },
   },
   window: {
     key: 'window',
-    label: 'window',
+    labelKey: 'styleEffectGroupWindow',
     fields: [
-      { key: 'x1', kind: 'number', min: 0, max: 1, step: 0.05 },
-      { key: 'y1', kind: 'number', min: 0, max: 1, step: 0.05 },
-      { key: 'x2', kind: 'number', min: 0, max: 1, step: 0.05 },
-      { key: 'y2', kind: 'number', min: 0, max: 1, step: 0.05 },
+      { key: 'x1', labelKey: 'styleEffectFieldX1', kind: 'number', min: 0, max: 1, step: 0.05 },
+      { key: 'y1', labelKey: 'styleEffectFieldY1', kind: 'number', min: 0, max: 1, step: 0.05 },
+      { key: 'x2', labelKey: 'styleEffectFieldX2', kind: 'number', min: 0, max: 1, step: 0.05 },
+      { key: 'y2', labelKey: 'styleEffectFieldY2', kind: 'number', min: 0, max: 1, step: 0.05 },
     ],
     defaults: { x1: 0, y1: 0, x2: 1, y2: 1 },
   },
-  zoom: { key: 'zoom', label: 'zoom', scalar: { min: 0, max: 4, step: 0.05, defaultValue: 1 } },
+  zoom: {
+    key: 'zoom',
+    labelKey: 'styleEffectGroupZoom',
+    scalar: { min: 0, max: 4, step: 0.05, defaultValue: 1 },
+  },
   tilt: {
     key: 'tilt',
-    label: 'tilt',
+    labelKey: 'styleEffectGroupTilt',
     fields: [
-      { key: 'maxAngle', kind: 'number', min: 0, max: 30, step: 1 },
-      { key: 'perspective', kind: 'number', min: 200, max: 2000, step: 50 },
-      { key: 'scale', kind: 'number', min: 0.8, max: 1.2, step: 0.01 },
+      {
+        key: 'maxAngle',
+        labelKey: 'styleEffectFieldMaxAngle',
+        kind: 'number',
+        min: 0,
+        max: 30,
+        step: 1,
+      },
+      {
+        key: 'perspective',
+        labelKey: 'styleEffectFieldPerspective',
+        kind: 'number',
+        min: 200,
+        max: 2000,
+        step: 50,
+      },
+      {
+        key: 'scale',
+        labelKey: 'styleEffectFieldScale',
+        kind: 'number',
+        min: 0.8,
+        max: 1.2,
+        step: 0.01,
+      },
     ],
     defaults: { ...TILT_DEFAULTS },
   },
@@ -142,7 +226,9 @@ export const EFFECT_GROUPS_PACK_ICON: EffectGroupKey[] = [
 export const EFFECT_GROUPS_COVER: EffectGroupKey[] = ['window', 'zoom', 'tilt']
 
 const asRecord = (value: unknown): Record<string, number | string | undefined> =>
-  value !== null && typeof value === 'object' ? (value as Record<string, number | string | undefined>) : {}
+  value !== null && typeof value === 'object'
+    ? (value as Record<string, number | string | undefined>)
+    : {}
 
 const pruneEffects = (
   effects: StyleEffects,
@@ -160,7 +246,7 @@ const pruneEffects = (
 
 /**
  * effects 编辑器：每个效果组一个开关，打开时写入该组默认值；组内字段按清单里的范围输入。
- * `allowTilt` 为 false 时不渲染 tilt（背景 / 包图标不允许 tilt）。
+ * 组名 / 字段名显示本地化文案，提交的 effects 仍使用 `EffectGroup.key` / `EffectField.key`。
  */
 export const StyleEditEffects = ({
   effects,
@@ -172,6 +258,7 @@ export const StyleEditEffects = ({
   onChange: (effects: StyleEffects | undefined) => void
 }) => {
   const t = useTranslate()
+  const labels = useStyleLabels()
   const current = effects ?? {}
 
   const toggle = (group: EffectGroup, enabled: boolean): void => {
@@ -212,15 +299,16 @@ export const StyleEditEffects = ({
       {groups.map((key) => {
         const group = EFFECT_GROUPS[key]
         const enabled = current[key] !== undefined
+        const groupLabel = labels.effectGroup(group.key)
         return (
-          <div key={key} className={styles.effectGroup}>
+          <div key={key} className={styles.effectGroup} data-effect-group-key={group.key}>
             <label className={styles.effectHead}>
               <input
                 type="checkbox"
                 checked={enabled}
                 onChange={(event) => toggle(group, event.target.checked)}
               />
-              <span className={styles.effectName}>{group.label}</span>
+              <span className={styles.effectName}>{groupLabel}</span>
             </label>
             {enabled ? (
               group.scalar ? (
@@ -230,20 +318,23 @@ export const StyleEditEffects = ({
                   min={group.scalar.min}
                   max={group.scalar.max}
                   step={group.scalar.step}
-                  aria-label={group.label}
+                  aria-label={groupLabel}
                   value={String(current[key] ?? '')}
-                  onChange={(event) =>
-                    setValue(group, group.key, Number(event.target.value))
-                  }
+                  onChange={(event) => setValue(group, group.key, Number(event.target.value))}
                 />
               ) : (
                 <div className={styles.effectFields}>
                   {group.fields?.map((field) => {
                     const values = asRecord(current[key])
                     const value = values[field.key]
+                    const fieldLabel = labels.effectField(field.key)
                     return (
-                      <label key={field.key} className={styles.effectField}>
-                        <span className={styles.effectFieldLabel}>{field.key}</span>
+                      <label
+                        key={field.key}
+                        className={styles.effectField}
+                        data-effect-field-key={field.key}
+                      >
+                        <span className={styles.effectFieldLabel}>{fieldLabel}</span>
                         <input
                           className={clsx(
                             styles.input,
@@ -253,7 +344,7 @@ export const StyleEditEffects = ({
                           min={field.min}
                           max={field.max}
                           step={field.step}
-                          aria-label={`${group.label}.${field.key}`}
+                          aria-label={`${groupLabel} ${fieldLabel}`}
                           value={value === undefined ? '' : String(value)}
                           onChange={(event) =>
                             setValue(

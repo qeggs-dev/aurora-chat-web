@@ -24,7 +24,7 @@ import {
 } from './types.js'
 
 /** 对象型效果组内字段的展示顺序（未知字段由导入器过滤，这里只列规范字段） */
-const EFFECT_FIELD_ORDER: Record<
+export const EFFECT_FIELD_ORDER: Record<
   Exclude<StyleEffectsKey, 'opacity' | 'zoom'>,
   readonly string[]
 > = {

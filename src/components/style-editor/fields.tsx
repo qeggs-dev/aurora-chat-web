@@ -163,7 +163,9 @@ export const AssetField = ({
     <div className={styles.assetRow}>
       <div className={styles.assetHead}>
         <span className={styles.assetName}>{label}</span>
-        <span className={styles.assetState}>{file ? file.fileName : t('styleEditNone')}</span>
+        <span className={styles.assetState} data-technical>
+          {file ? file.fileName : t('styleEditNone')}
+        </span>
       </div>
       <div className={styles.assetBody}>
         {preview ? (

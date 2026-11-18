@@ -17,6 +17,7 @@ import {
   type StyleEffectSummary,
 } from '../../services/style/effectSummary.js'
 import type { StyleManifest, Theme } from '../../services/style/types.js'
+import { useStyleLabels } from '../style-editor/labels.js'
 import styles from './StyleSection.module.css'
 
 const THEMES: Array<{ theme: Theme; label: TranslationKey }> = [
@@ -40,14 +41,20 @@ const resourceLabel = (resource: StyleEffectResource, t: Translate): string => {
   return styleAssetLabel(resource.id)
 }
 
-/** 效果组内每个字段的展示文本：`y 6`、`color #11223344`；标量效果只有值 */
-const fieldText = (group: StyleEffectSummary[number]): string =>
+/** 效果组内每个字段的展示文本：`垂直偏移 6`、`颜色 #11223344`；标量效果只有值 */
+const fieldText = (
+  group: StyleEffectSummary[number],
+  labels: ReturnType<typeof useStyleLabels>
+): string =>
   group.values
-    .map((value) => (value.field ? `${value.field} ${value.value}` : value.value))
+    .map((value) =>
+      value.field ? `${labels.effectField(value.field)} ${value.value}` : value.value
+    )
     .join(' · ')
 
 export const StylePackEffects = ({ manifest }: { manifest: StyleManifest }) => {
   const t = useTranslate()
+  const labels = useStyleLabels()
   return (
     <div className={styles.detailEffects}>
       {THEMES.map(({ theme, label }) => {
@@ -78,17 +85,29 @@ export const StylePackEffects = ({ manifest }: { manifest: StyleManifest }) => {
                           </span>
                           <span className={styles.effectChips}>
                             {summary.map((group) => (
-                              <span key={group.group} className={styles.effectChip}>
-                                {group.group}
+                              <span
+                                key={group.group}
+                                className={styles.effectChip}
+                                data-effect-group={group.group}
+                              >
+                                {labels.effectGroup(group.group)}
                               </span>
                             ))}
                           </span>
                         </summary>
                         <div className={styles.effectValues}>
                           {summary.map((group) => (
-                            <div key={group.group} className={styles.effectValueRow}>
-                              <span className={styles.effectValueGroup}>{group.group}</span>
-                              <span className={styles.effectValueFields}>{fieldText(group)}</span>
+                            <div
+                              key={group.group}
+                              className={styles.effectValueRow}
+                              data-effect-group={group.group}
+                            >
+                              <span className={styles.effectValueGroup}>
+                                {labels.effectGroup(group.group)}
+                              </span>
+                              <span className={styles.effectValueFields}>
+                                {fieldText(group, labels)}
+                              </span>
                             </div>
                           ))}
                         </div>

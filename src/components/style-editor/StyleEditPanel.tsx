@@ -25,11 +25,8 @@ import {
 import {
   BACKGROUND_SLOTS,
   ICON_SLOTS,
-  STYLE_ALIGNS,
   STYLE_ALIGN_DEFAULT,
-  STYLE_FITS,
   STYLE_FIT_DEFAULT,
-  STYLE_RENDERS,
   STYLE_RENDER_DEFAULT,
   type StyleAlign,
   type StyleFit,
@@ -37,28 +34,19 @@ import {
   type StyleSlot,
 } from '../../services/style/types.js'
 import { Button } from '../base/Button.js'
-import { Select, type SelectOption } from '../base/Select.js'
+import { Select } from '../base/Select.js'
 import {
   EFFECT_GROUPS_BACKGROUND,
   EFFECT_GROUPS_ICON,
   StyleEditEffects,
 } from './StyleEditEffects.js'
+import { useStyleEnumOptions } from './labels.js'
 import { StyleEditMetadata } from './StyleEditMetadata.js'
 import { ACCEPT_IMAGE, AssetField, Field, Section, useAcceptFile, useIssueAt } from './fields.js'
 import { STYLE_EDIT_ISSUE_KEYS, styleEditIssueParams } from './messages.js'
 import { useStyleSlotLabel } from './slotLabels.js'
 import { STYLE_EDIT_SIDEBAR_TITLE, styleEditTargetKind } from './targets.js'
 import styles from './StyleEditMode.module.css'
-
-const fitOptions: SelectOption<StyleFit>[] = STYLE_FITS.map((value) => ({ value, label: value }))
-const alignOptions: SelectOption<StyleAlign>[] = STYLE_ALIGNS.map((value) => ({
-  value,
-  label: value,
-}))
-const renderOptions: SelectOption<StyleRender>[] = STYLE_RENDERS.map((value) => ({
-  value,
-  label: value,
-}))
 
 /** 去掉某个槽位（用拷贝代替 delete 动态键，规避 typescript/no-dynamic-delete） */
 const omitSlot = <T,>(
@@ -82,6 +70,7 @@ const BackgroundSlotEditor = ({ slot }: { slot: StyleSlot }) => {
   const draft = useStyleEditStore((state) => state.draft)
   const issueAt = useIssueAt()
   const acceptFile = useAcceptFile()
+  const { fitOptions, alignOptions, renderOptions } = useStyleEnumOptions()
   if (!draft) {
     return null
   }
@@ -150,7 +139,7 @@ const BackgroundSlotEditor = ({ slot }: { slot: StyleSlot }) => {
             <div className={styles.option}>
               <span className={styles.optionLabel}>{t('stylePackDetailFit')}</span>
               <Select<StyleFit>
-                ariaLabel={`${slot} fit`}
+                ariaLabel={`${slotLabel(slot)} ${t('stylePackDetailFit')}`}
                 className={styles.select}
                 value={fit}
                 options={fitOptions}
@@ -160,7 +149,7 @@ const BackgroundSlotEditor = ({ slot }: { slot: StyleSlot }) => {
             <div className={styles.option}>
               <span className={styles.optionLabel}>{t('stylePackDetailAlign')}</span>
               <Select<StyleAlign>
-                ariaLabel={`${slot} align`}
+                ariaLabel={`${slotLabel(slot)} ${t('stylePackDetailAlign')}`}
                 className={styles.select}
                 value={align}
                 options={alignOptions}
@@ -170,7 +159,7 @@ const BackgroundSlotEditor = ({ slot }: { slot: StyleSlot }) => {
             <div className={styles.option}>
               <span className={styles.optionLabel}>{t('stylePackDetailRender')}</span>
               <Select<StyleRender>
-                ariaLabel={`${slot} render`}
+                ariaLabel={`${slotLabel(slot)} ${t('stylePackDetailRender')}`}
                 className={styles.select}
                 value={render}
                 options={renderOptions}
@@ -184,7 +173,7 @@ const BackgroundSlotEditor = ({ slot }: { slot: StyleSlot }) => {
               className={clsx(styles.input, issueAt(`${basePath}.position`) && styles.inputInvalid)}
               value={file.position ?? ''}
               placeholder={t('styleEditPositionPlaceholder')}
-              aria-label={`${slot} position`}
+              aria-label={`${slotLabel(slot)} ${t('stylePackDetailPosition')}`}
               onChange={(event) => patch({ position: event.target.value })}
             />
             {issueAt(`${basePath}.position`) ? (
@@ -213,6 +202,7 @@ const IconSlotEditor = ({ slot }: { slot: StyleSlot }) => {
   const draft = useStyleEditStore((state) => state.draft)
   const issueAt = useIssueAt()
   const acceptFile = useAcceptFile()
+  const { renderOptions } = useStyleEnumOptions()
   if (!draft) {
     return null
   }
@@ -274,7 +264,7 @@ const IconSlotEditor = ({ slot }: { slot: StyleSlot }) => {
           <div className={styles.option}>
             <span className={styles.optionLabel}>{t('stylePackDetailRender')}</span>
             <Select<StyleRender>
-              ariaLabel={`${slot} render`}
+              ariaLabel={`${slotLabel(slot)} ${t('stylePackDetailRender')}`}
               className={styles.select}
               value={file.render ?? STYLE_RENDER_DEFAULT}
               options={renderOptions}
@@ -379,6 +369,7 @@ const ControlGroup = ({
             type="button"
             className={clsx(styles.controlChip, slot === selectedSlot && styles.controlChipActive)}
             aria-pressed={slot === selectedSlot}
+            data-style-edit-slot={slot}
             onClick={() => selectStyleEditSlot(slot)}
           >
             {slotLabel(slot)}

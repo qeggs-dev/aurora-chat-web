@@ -39,6 +39,7 @@
     "src/components/settings/presetDraftStore.ts",
     "src/components/motion/motionMath.ts",
     "src/components/style-editor/panelPosition.ts",
+    "src/components/style-editor/labels.ts",
     "src/services/chat/compaction.ts",
     "src/services/memory/schema.ts",
     "src/services/memory/store.ts",

@@ -35,6 +35,7 @@ import {
   EFFECT_GROUPS_PACK_ICON,
   StyleEditEffects,
 } from './StyleEditEffects.js'
+import { useStyleLabels } from './labels.js'
 import styles from './StyleEditMode.module.css'
 
 /* ============================ 基本信息 ============================ */
@@ -304,6 +305,7 @@ const PackImageSection = () => {
 
 const PaletteSection = () => {
   const t = useTranslate()
+  const labels = useStyleLabels()
   const draft = useStyleEditStore((state) => state.draft)
   const issueAt = useIssueAt()
   const [status, setStatus] = useState<TranslationMessage | null>(null)
@@ -367,7 +369,9 @@ const PaletteSection = () => {
         const error = issueAt(`palette.${draft.theme}.${key}`)
         return (
           <div key={key} className={styles.paletteRow}>
-            <span className={styles.paletteLabel}>{key}</span>
+            <span className={styles.paletteLabel} title={key} data-raw-token={key}>
+              {labels.palette(key)}
+            </span>
             <input
               type="color"
               className={styles.colorPicker}
