@@ -21,12 +21,35 @@ type ConfigOptions = {
   apiOrigin?: string
   /** 开发服务器配置，支持本地接口代理 */
   devServer?: Configuration['devServer']
+  /** 构建渠道，注入为 __APP_CHANNEL__；默认 production → release、dev → dev */
+  channel?: BuildChannel
+}
+
+export type BuildChannel = 'dev' | 'debug' | 'release'
+
+const BUILD_CHANNELS: ReadonlyArray<BuildChannel> = ['dev', 'debug', 'release']
+
+/**
+ * 构建渠道优先级：显式参数 > APP_CHANNEL 环境变量 > 按 NODE_ENV 推断。
+ * Android 打包脚本会传 -Channel debug/release 让 APK 选对同签名安装包；
+ * 桌面端固定用 release（渠道只影响 Android 资产选择）。
+ */
+const resolveChannel = (explicit?: BuildChannel): BuildChannel => {
+  if (explicit && BUILD_CHANNELS.includes(explicit)) {
+    return explicit
+  }
+  const fromEnv = process.env.APP_CHANNEL
+  if (fromEnv === 'dev' || fromEnv === 'debug' || fromEnv === 'release') {
+    return fromEnv
+  }
+  return dev ? 'dev' : 'release'
 }
 
 /** 创建构建配置，支持自定义 API 地址和开发服务器选项 */
 export const createConfig = ({
   apiOrigin = 'https://api.deepseek.com',
   devServer,
+  channel,
 }: ConfigOptions = {}): Configuration => ({
   mode: dev ? 'development' : 'production',
   entry: './src/main.tsx',
@@ -85,7 +108,10 @@ export const createConfig = ({
       scriptLoading: 'defer',
       meta: { 'application-version': version },
     }),
-    new rspack.DefinePlugin({ __API_ORIGIN__: JSON.stringify(apiOrigin) }),
+    new rspack.DefinePlugin({
+      __API_ORIGIN__: JSON.stringify(apiOrigin),
+      __APP_CHANNEL__: JSON.stringify(resolveChannel(channel)),
+    }),
     new rspack.CopyRspackPlugin({
       patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
     }),

@@ -1,0 +1,175 @@
+/* 「设置 → 关于 → 检查更新」区块：与设置页其它区块一致的 token，进度条复用主色 */
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.versionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.version {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 21px;
+}
+
+.hint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* 「检查更新」按钮靠右，版本号在左 */
+.versionRow > button {
+  margin-left: auto;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background-color: var(--dsw-alias-markdown-code-block);
+}
+
+.cardTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.meta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.notesLabel {
+  margin-top: 2px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 21px;
+  font-weight: 500;
+}
+
+.notes {
+  box-sizing: border-box;
+  max-height: 180px;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: 8px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 19px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.asset {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.warn {
+  color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.notice {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.errorRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.errorText {
+  flex: 1 0 auto;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.progressLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.progressTrack {
+  flex: 1 1 160px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background-color: var(--dsw-alias-border-l3);
+}
+
+.progressBar {
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--dsw-alias-button-primary-fill);
+  transition: width var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.dismiss {
+  padding: 0 6px;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 21px;
+  cursor: pointer;
+  outline: none;
+}
+
+.dismiss:hover {
+  color: var(--dsw-alias-label-secondary);
+  text-decoration: underline;
+}

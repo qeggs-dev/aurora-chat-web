@@ -21,6 +21,8 @@ type Settings = {
   compatibilityMode: boolean
   /** 是否已确认首次使用声明（非官方封装） */
   disclaimerAccepted: boolean
+  /** 启动时自动检查更新（默认开启；关掉后不再在启动时请求 GitHub） */
+  autoCheckUpdates: boolean
 }
 
 const KEYS = {
@@ -34,6 +36,7 @@ const KEYS = {
   siderCollapsed: 'chat-demo:sider-collapsed',
   compatibilityMode: 'chat-demo:compatibility-mode',
   disclaimerAccepted: 'chat-demo:disclaimer-accepted',
+  autoCheckUpdates: 'chat-demo:auto-check-updates',
 } as const
 
 const read = (key: string) => {
@@ -104,6 +107,8 @@ export const useSettings = create<Settings>(() => ({
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
   compatibilityMode: read(KEYS.compatibilityMode) === 'true',
   disclaimerAccepted: read(KEYS.disclaimerAccepted) === 'true',
+  // 默认开启：只有显式存过 'false' 才关闭
+  autoCheckUpdates: read(KEYS.autoCheckUpdates) !== 'false',
 }))
 
 export const setLocale = (locale: Locale) => {
@@ -157,4 +162,10 @@ export const setCompatibilityMode = (compatibilityMode: boolean) => {
 export const acceptDisclaimer = () => {
   write(KEYS.disclaimerAccepted, 'true')
   useSettings.setState({ disclaimerAccepted: true })
+}
+
+/** 启动时自动检查更新：默认开启，关掉后启动不再请求 GitHub */
+export const setAutoCheckUpdates = (autoCheckUpdates: boolean) => {
+  write(KEYS.autoCheckUpdates, String(autoCheckUpdates))
+  useSettings.setState({ autoCheckUpdates })
 }
