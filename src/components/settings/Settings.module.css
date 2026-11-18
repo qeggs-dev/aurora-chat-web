@@ -975,3 +975,19 @@
   border-radius: 50%;
   background-color: var(--dsw-alias-state-error-primary);
 }
+
+/* 窄屏：通用设置行改为上下两段，避免右侧操作区把说明文字挤成一字一行 */
+@media (max-width: 640px) {
+  .row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .row .text {
+    flex: 1 1 220px;
+  }
+
+  .row > :not(.text) {
+    max-width: 100%;
+  }
+}

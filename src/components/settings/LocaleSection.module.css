@@ -163,3 +163,10 @@
     margin-left: auto;
   }
 }
+
+@media (max-width: 640px) {
+  .actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
