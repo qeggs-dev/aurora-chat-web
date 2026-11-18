@@ -338,9 +338,33 @@ const textFromConfig = (config: PresetConfig): TextMap => {
   }
 }
 
+/** 默认预设的编辑草稿：把系统默认值真正填进空字段，让用户看到当前实际生效的配置 */
+const withSystemDefaults = (config: PresetConfig): PresetConfig => {
+  if (!isBuiltinPreset(config)) {
+    return config
+  }
+  const defaults = SYSTEM_DEFAULT_PRESET
+  const params: NonNullable<PresetConfig['params']> = { ...defaults.params }
+  for (const [key, value] of Object.entries(config.params ?? {})) {
+    if (value !== undefined) {
+      ;(params as Record<string, unknown>)[key] = value
+    }
+  }
+  return {
+    ...config,
+    protocol: config.protocol ?? defaults.protocol,
+    base_url: config.base_url?.trim() ? config.base_url : defaults.base_url,
+    model: config.model?.trim() ? config.model : defaults.model,
+    params,
+    system_prompt: config.system_prompt?.trim() ? config.system_prompt : APP_SYSTEM_PROMPT,
+    memory: { ...defaults.memory, ...(config.memory ?? {}) },
+    compaction: { ...defaults.compaction, ...(config.compaction ?? {}) },
+  }
+}
+
 const draftFromConfig = (config: PresetConfig, dirty: boolean): Draft => ({
-  config,
-  text: textFromConfig(config),
+  config: withSystemDefaults(config),
+  text: textFromConfig(withSystemDefaults(config)),
   dirty,
   builtin: isBuiltinPreset(config),
 })
