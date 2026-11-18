@@ -332,8 +332,12 @@ export const zh = {
   presetFieldStop: 'stop（逗号分隔）',
   presetFieldStopHint: '多个停止词用逗号分隔，保存时会转成数组。',
   presetApiKeyNote: 'API Key 在「数据管理」里全局配置，不保存在预设中。',
-  presetPromptNote: '留空则使用应用自带的系统提示词。',
+  presetPromptNote: '提示词就是完整内容：留空则请求里不出现 system 字段。',
   presetPromptCount: '字数：{count}',
+  presetPromptEmptyHint: '留空 = 请求里不发送 system 提示词（应用自带参考：{preview}）',
+  presetPromptEmptyHintShort: '留空 = 请求里不发送 system 提示词',
+  presetParamUnsent: '留空 = 不发送（接口默认）',
+  presetParamUnsentWithDefault: '留空 = 不发送（参考默认：{value}）',
   presetPromptTemplateNote:
     '提示词支持模板变量（双花括号）：{{preset.name}}、{{preset.id}}、{{preset.protocol}}、{{preset.base_url}}、{{preset.model}}、{{preset.params}}、{{preset.memory}}、{{preset.compaction}}、{{preset.dump}}、{{env.platform}}、{{env.app}}、{{env.version}}、{{env.locale}}、{{env.theme}}。未识别的变量保留原样；不提供时间变量（会破坏 KV cache）。',
   presetPromptTemplateVarsLabel: '插入模板变量',
@@ -406,6 +410,10 @@ export const zh = {
   presetErrorBadFileType: '预设包内包含不支持的文件类型。',
   presetErrorReservedId: '该 id 为内置预设保留，无法导入或覆盖。',
   presetErrorImportedReadOnly: '导入的预设不可编辑；需要修改请自己新建一个。',
+  presetErrorMissingDescription: '描述不能为空，已阻止保存或导入。',
+  presetErrorMissingAuthor: '作者不能为空，已阻止保存或导入。',
+  presetErrorMissingVersion: '版本不能为空，已阻止保存或导入。',
+  presetErrorMissingCopyright: '版权声明不能为空，已阻止保存或导入。',
   presetImportedBadge: '导入',
   presetImportedReadOnly: '导入的预设不可编辑；需要修改请自己新建一个。',
   presetCopyAsNew: '复制为新预设',
@@ -433,6 +441,17 @@ export const zh = {
   presetCopyrightInvalid: '版权声明不能包含 < 或 >',
   presetIdReadonly: '唯一标识，创建后不可修改；导入或保存时按 id 覆盖同 id 预设。',
   presetMetadataHint: '名称仅用于展示，可随时修改、允许重名；id 是系统识别用的唯一标识。',
+  presetMetadataRequiredHint:
+    '描述、作者、版本与版权声明为必填项（内置预设除外）；导入预设时同样校验，缺少任一项会拒绝导入。',
+  presetMetadataRequiredError: '保存被拒绝：{fields}不能为空。',
+  presetMetadataListSeparator: '、',
+  presetFieldTextTooLong: '不能超过 {max} 个字符',
+  presetSavedNotActive: '已保存，但该预设尚未启用：点「启用」后新请求才会使用它。',
+  presetActivateUnsaved: '有未保存的修改：请先点「保存」，再启用（启用会读取已保存的配置）。',
+  presetNotActiveHint:
+    '该预设尚未启用：当前生效的是「{name}」，点「启用」后新请求才会改用本预设的提示词与参数。',
+  presetNotActiveHintNone:
+    '该预设尚未启用：当前没有启用任何预设，点「启用」后新请求才会改用本预设。',
   presetDefaultFieldsHint:
     '内置默认预设：协议 / Base URL / 模型留空表示使用系统默认（DeepSeek Anthropic 兼容端点与内置模型），其余字段留空同样取系统默认。',
   presetOptional: '可选',

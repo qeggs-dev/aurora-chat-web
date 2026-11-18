@@ -74,7 +74,8 @@ export const BLOCK_OVERHEAD_TOKENS = 4
  */
 export type SummaryRequest = {
   model: ChatModel
-  system: string
+  /** 预设没有填写提示词时不发送 system（undefined = 请求体不出现该字段） */
+  system?: string
   messages: MessageParam[]
   thinking: { type: 'enabled' | 'disabled' }
 }
@@ -271,7 +272,7 @@ const buildTranscript = (messages: Message[]): string =>
 
 export type SummarizationInput = {
   model: ChatModel
-  system: string
+  system?: string
   compacted: Message[]
   previousSummary?: string
   compaction: PresetCompaction
@@ -294,7 +295,7 @@ export const buildSummarizationRequest = (input: SummarizationInput): SummaryReq
   parts.push(instruction)
   return {
     model: input.model,
-    system: input.system,
+    ...(input.system === undefined ? {} : { system: input.system }),
     messages: [{ role: 'user', content: parts.join('\n\n') }],
     // 摘要不需要思考。
     thinking: { type: 'disabled' },
@@ -337,7 +338,7 @@ export type CompactionInput = {
   previous?: SessionCompaction
   compaction: PresetCompaction
   model: ChatModel
-  system: string
+  system?: string
   signal: AbortSignal
   stream: SummaryStream
 }

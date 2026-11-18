@@ -499,20 +499,21 @@ const presetAnthropicBody = (
     wire.model = preset.model
   }
   wire.stream = true
-  if (overrides.params.has('max_tokens')) {
+  // 采样参数只有预设显式填写时才写进请求体；留空 = 省略，交给接口自己的默认值
+  if (params.max_tokens !== undefined) {
     wire.max_tokens = params.max_tokens
   }
-  if (overrides.params.has('top_p')) {
+  if (params.top_p !== undefined) {
     wire.top_p = params.top_p
   }
   if (forceThinking) {
     wire.thinking = { type: 'enabled' as const }
   }
   // 开启思考时部分模型拒收 temperature（与适配层一致：省略而不是置 1）
-  if (body.thinking?.type !== 'enabled' && !forceThinking && overrides.params.has('temperature')) {
+  if (body.thinking?.type !== 'enabled' && !forceThinking && params.temperature !== undefined) {
     wire.temperature = params.temperature
   }
-  if (overrides.params.has('stop') && params.stop.length > 0) {
+  if (params.stop !== undefined && params.stop.length > 0) {
     wire.stop_sequences = params.stop
   }
   return wire
@@ -715,11 +716,11 @@ const warnUnsupportedParams = (
   stop: string[]
 ) => {
   const { params } = preset
-  if (params.seed !== null && !capabilities.sampling.seed) {
+  if (typeof params.seed === 'number' && !capabilities.sampling.seed) {
     warnOnce('seed', `当前预设协议不支持 seed，已忽略（${preset.name}）`)
   }
   if (
-    (params.presence_penalty !== 0 || params.frequency_penalty !== 0) &&
+    (params.presence_penalty !== undefined || params.frequency_penalty !== undefined) &&
     !capabilities.sampling.penalties
   ) {
     warnOnce('penalties', `当前预设协议不支持 penalties，已忽略（${preset.name}）`)
@@ -731,7 +732,8 @@ const warnUnsupportedParams = (
 
 /**
  * CreateMessageRequest（Anthropic 形状）→ CanonicalRequest。
- * 参数一律来自预设；不支持的能力只 warn 一次并由适配层降级。
+ * 采样参数只带预设显式填写过的字段：留空 = 请求体不出现该字段，由接口使用自己的默认值；
+ * 不支持的能力只 warn 一次并由适配层降级。
  * compatible 为兼容模式：不生成 reminder 消息，也不带 thinking.effort（thinking.enabled 照旧）。
  */
 const buildCanonicalRequest = (
@@ -742,7 +744,7 @@ const buildCanonicalRequest = (
 ): CanonicalRequest => {
   const { params } = preset
   const capabilities = resolveCapabilities(profile)
-  const stop = params.stop.filter((item) => item.trim() !== '')
+  const stop = (params.stop ?? []).filter((item) => item.trim() !== '')
   warnUnsupportedParams(preset, capabilities, stop)
   // 客户端工具（记忆工具）走统一适配层；服务端工具（DeepSeek 扩展）由 warnDroppedDeepseekFields 提示丢弃
   const clientTools: CanonicalTool[] = request.tools.filter(isClientTool).map((tool) => ({
@@ -753,27 +755,29 @@ const buildCanonicalRequest = (
   const thinkingEnabled = request.thinking?.type === 'enabled'
   const system = request.system?.trim() ? request.system : undefined
   // 与服务端工具的丢弃方式一致：兼容模式不发送 latest_reminder（DeepSeek 私有角色）
-  const messages = (compatible
-    ? request.messages.filter((message) => message.role !== 'latest_reminder')
-    : request.messages
+  const messages = (
+    compatible
+      ? request.messages.filter((message) => message.role !== 'latest_reminder')
+      : request.messages
   ).map(toCanonicalMessage)
   return {
     model: preset.model,
     ...(system === undefined ? {} : { system }),
     messages,
-    ...(clientTools.length > 0
-      ? { tools: clientTools, toolChoice: 'auto' as const }
-      : {}),
-    maxOutputTokens: params.max_tokens,
-    temperature: params.temperature,
-    topP: params.top_p,
+    ...(clientTools.length > 0 ? { tools: clientTools, toolChoice: 'auto' as const } : {}),
+    // 未填写的采样参数一律省略，交给接口提供方自己的默认值
+    ...(params.max_tokens === undefined ? {} : { maxOutputTokens: params.max_tokens }),
+    ...(params.temperature === undefined ? {} : { temperature: params.temperature }),
+    ...(params.top_p === undefined ? {} : { topP: params.top_p }),
     ...(stop.length === 0 ? {} : { stop }),
-    ...(params.seed === null ? {} : { seed: params.seed }),
-    presencePenalty: params.presence_penalty,
-    frequencyPenalty: params.frequency_penalty,
+    ...(typeof params.seed === 'number' ? { seed: params.seed } : {}),
+    ...(params.presence_penalty === undefined ? {} : { presencePenalty: params.presence_penalty }),
+    ...(params.frequency_penalty === undefined
+      ? {}
+      : { frequencyPenalty: params.frequency_penalty }),
     thinking: {
       enabled: thinkingEnabled,
-      ...(thinkingEnabled && !compatible && params.reasoning_effort !== null
+      ...(thinkingEnabled && !compatible && typeof params.reasoning_effort === 'string'
         ? { effort: params.reasoning_effort }
         : {}),
     },

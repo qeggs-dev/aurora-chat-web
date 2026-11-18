@@ -196,7 +196,8 @@ export type ClientToolParam = {
 
 export type CreateMessageRequest = {
   model: ChatModel
-  system: string
+  /** 预设提示词为空时不传该字段：请求体里不出现 system */
+  system?: string
   messages: MessageParam[]
   thinking: { type: 'enabled' | 'disabled' }
   /** 服务端工具（DeepSeek 扩展）与客户端工具可同时存在 */

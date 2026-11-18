@@ -21,7 +21,6 @@ import {
 } from './drafts.js'
 import { createLatestReminder } from './latestReminder.js'
 import {
-  APP_SYSTEM_PROMPT,
   applyEvent,
   buildSystemPrompt,
   canContinueReply,
@@ -1086,7 +1085,7 @@ const prepareCompaction = async (
     ...(session.compaction ? { previous: session.compaction } : {}),
     compaction: preset?.compaction ?? DEFAULT_PRESET_COMPACTION,
     model,
-    system: buildSystemPrompt(APP_SYSTEM_PROMPT),
+    system: buildSystemPrompt(),
     signal,
     stream: summaryStream,
   })
@@ -1172,10 +1171,12 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           if (reply.blocks.some((block) => block.type === 'tool_use')) {
             messages.push(...toToolContinuationMessages(reply))
           }
+          // 预设提示词为空时不带 system：请求体里不出现该字段
+          const system = buildSystemPrompt()
           const events = streamChat(
             {
               model: initial.model ?? MODEL,
-              system: buildSystemPrompt(APP_SYSTEM_PROMPT),
+              ...(system === undefined ? {} : { system }),
               messages,
               thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
               safety_check: SAFETY_CHECK,
@@ -1191,14 +1192,17 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             receivedContent ||= event.type === 'content_block_start'
             if (
               event.type === 'message_delta' &&
-              (event.delta.stop_reason === 'end_turn' || event.delta.stop_reason === 'max_tokens') &&
+              (event.delta.stop_reason === 'end_turn' ||
+                event.delta.stop_reason === 'max_tokens') &&
               event.delta.title?.trim() &&
               titleRequests.has(controller) &&
               !controller.signal.aborted &&
               !get().importingHistory
             ) {
               const title = event.delta.title.trim()
-              updateSession(sessionId, (session) => (session.title ? session : { ...session, title }))
+              updateSession(sessionId, (session) =>
+                session.title ? session : { ...session, title }
+              )
               titleRequests.delete(controller)
             }
             reply = applyEvent(reply, event, Date.now(), blockIndexes)

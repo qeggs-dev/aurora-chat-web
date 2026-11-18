@@ -12,7 +12,6 @@ import {
   DEFAULT_PRESET_COMPACTION,
   DEFAULT_PRESET_ID,
   DEFAULT_PRESET_MEMORY,
-  DEFAULT_PRESET_PARAMS,
   assertPresetEditable,
   isSystemDefaultPreset,
   PresetError,
@@ -162,8 +161,11 @@ const ensureDefaultPreset = async (): Promise<void> => {
   })
 }
 
-/** 导入 preset zip；同 id 覆盖，当前没有启用项时自动启用 */
-export const importPresetZip = async (file: File): Promise<void> => {
+/**
+ * 导入 preset zip；同 id 覆盖，当前没有启用项时自动启用。
+ * 返回导入预设的 id / 名称，UI 用它提示「已导入但未启用」并切到该预设。
+ */
+export const importPresetZip = async (file: File): Promise<{ id: string; name: string }> => {
   set({ importing: true, error: null })
   try {
     const parsed = await parsePresetZip(file)
@@ -190,6 +192,7 @@ export const importPresetZip = async (file: File): Promise<void> => {
       await activatePreset(parsed.config.id)
     }
     set({ importing: false })
+    return { id: parsed.config.id, name: parsed.config.name }
   } catch (error) {
     set({ importing: false, error: errorCode(error, 'importFailed') })
     throw error
@@ -230,9 +233,7 @@ export const savePresetJson = async (text: string): Promise<void> => {
       throw new PresetError('missingFile', config.system_prompt_file)
     }
     const storedConfig: PresetConfig =
-      isDefault || previous?.builtin === true
-        ? { ...config, builtin: true }
-        : config
+      isDefault || previous?.builtin === true ? { ...config, builtin: true } : config
     await putStoredPreset({
       id: storedConfig.id,
       config: storedConfig,
@@ -260,7 +261,7 @@ export const createPresetDraft = (): string =>
   JSON.stringify(
     {
       $comment:
-        '直接编辑后保存。system_prompt 留空则使用应用自带提示词；icon / license / system_prompt_file 只能来自 zip 包，手写 JSON 请勿填写。',
+        '直接编辑后保存。system_prompt 留空则不发送 system 提示词；采样参数只有填写了才会写进请求体（留空 = 接口默认值）。icon / license / system_prompt_file 只能来自 zip 包，手写 JSON 请勿填写。',
       schema: 1,
       id: `custom-${Date.now().toString(36)}`,
       name: '自定义预设',
@@ -271,7 +272,8 @@ export const createPresetDraft = (): string =>
       protocol: 'openai',
       base_url: 'https://api.deepseek.com',
       model: 'deepseek-chat',
-      params: { ...DEFAULT_PRESET_PARAMS, stop: [] },
+      // 留空 = 不发送该参数；需要固定采样值时再逐项填写
+      params: {},
       system_prompt: '',
       compaction: { ...DEFAULT_PRESET_COMPACTION },
       memory: { ...DEFAULT_PRESET_MEMORY },

@@ -660,7 +660,6 @@
   }
 }
 
-
 /* 模型输入框 + 「获取模型列表」按钮 */
 .fieldRow {
   display: flex;
@@ -671,4 +670,95 @@
 .fieldRow .input {
   flex: 1;
   min-width: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Activation notice: the saved preset is not the currently active one, so the
+ * next request would still use the previous preset until the user clicks 启用.
+ * ------------------------------------------------------------------------- */
+.activateNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.activateNoteBadge {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background-color: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-brand-text);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Model list below the model input: fixed max height, scrolls independently.
+ * ------------------------------------------------------------------------- */
+.modelList {
+  box-sizing: border-box;
+  margin-top: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background-color: transparent;
+}
+
+.modelItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background-color: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.modelItem:hover {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.modelItemSelected,
+.modelItemSelected:hover {
+  background-color: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-brand-text);
+  font-weight: 500;
+}
+
+.modelName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.modelCheck {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-brand-text);
+}
+
+.modelHint {
+  margin-top: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }

@@ -15,6 +15,11 @@ export type PresetErrorCode =
   | 'reservedId'
   /** 导入的预设只读：保存 / 重命名等修改接口一律拒绝 */
   | 'importedReadOnly'
+  /** 非内置预设缺少必填元信息：描述 / 作者 / 版本 / 版权声明（导入与保存共用） */
+  | 'missingDescription'
+  | 'missingAuthor'
+  | 'missingVersion'
+  | 'missingCopyright'
 
 export class PresetError extends Error {
   constructor(
@@ -23,6 +28,38 @@ export class PresetError extends Error {
   ) {
     super(detail ?? code)
     this.name = 'PresetError'
+  }
+}
+
+/**
+ * 名称之外、非内置预设必须提供的元信息字段。
+ * zip 导入与「保存非内置预设」共用同一套规则（内置默认预设不经过这里）：
+ * 四个字段 trim 后都不能为空，尤其 copyright 为空时直接拒绝整个导入包。
+ */
+export const PRESET_METADATA_FIELDS = ['description', 'author', 'version', 'copyright'] as const
+
+export type PresetMetadataField = (typeof PRESET_METADATA_FIELDS)[number]
+
+/** 每个元信息字段缺失时的稳定错误码，供 UI 映射成字段级文案 */
+export const PRESET_METADATA_ERROR_CODES: Readonly<Record<PresetMetadataField, PresetErrorCode>> = {
+  description: 'missingDescription',
+  author: 'missingAuthor',
+  version: 'missingVersion',
+  copyright: 'missingCopyright',
+}
+
+/** 返回缺失（trim 后为空）的元信息字段，顺序固定 */
+export const missingPresetMetadata = (
+  config: Pick<PresetConfig, PresetMetadataField> | null | undefined
+): PresetMetadataField[] =>
+  PRESET_METADATA_FIELDS.filter((field) => !(config?.[field] ?? '').trim())
+
+/** 校验元信息；缺失时抛带字段名的稳定错误码（只报第一个缺失字段） */
+export const assertPresetMetadata = (config: Pick<PresetConfig, PresetMetadataField>): void => {
+  const missing = missingPresetMetadata(config)
+  if (missing.length > 0) {
+    const field = missing[0]
+    throw new PresetError(PRESET_METADATA_ERROR_CODES[field], field)
   }
 }
 
@@ -144,7 +181,10 @@ export type PresetSummary = {
   source?: PresetSource
 }
 
-/** 参数默认值：清单缺省 params 时使用，新建预设的编辑器模板也用它 */
+/**
+ * 采样参数的「参考默认值」：只用于设置页 placeholder 展示与新建预设 JSON 模板，
+ * **不会**被写进请求体——留空的参数一律不发送，由接口提供方使用自己的默认值。
+ */
 export const DEFAULT_PRESET_PARAMS: PresetParams = {
   temperature: 1,
   top_p: 1,
@@ -188,7 +228,11 @@ export type ResolvedPreset = {
   protocol: PresetProtocol
   base_url: string
   model: string
-  params: PresetParams
+  /**
+   * 采样参数：只包含预设里显式写出的字段。
+   * 留空 = 请求体里不出现该字段，由接口提供方使用自己的默认值（不是发 0 / 系统默认）。
+   */
+  params: Partial<PresetParams>
   /** 空串 = 使用应用自带系统提示词 */
   system_prompt: string
   compaction: PresetCompaction
@@ -218,16 +262,44 @@ const definedKeys = <T extends object>(value: T | undefined): Set<keyof T> => {
   return keys
 }
 
-const resolvedParams = (params: Partial<PresetParams> | undefined): PresetParams => ({
-  temperature: params?.temperature ?? DEFAULT_PRESET_PARAMS.temperature,
-  top_p: params?.top_p ?? DEFAULT_PRESET_PARAMS.top_p,
-  max_tokens: params?.max_tokens ?? DEFAULT_PRESET_PARAMS.max_tokens,
-  stop: params?.stop === undefined ? [...DEFAULT_PRESET_PARAMS.stop] : [...params.stop],
-  presence_penalty: params?.presence_penalty ?? DEFAULT_PRESET_PARAMS.presence_penalty,
-  frequency_penalty: params?.frequency_penalty ?? DEFAULT_PRESET_PARAMS.frequency_penalty,
-  seed: params?.seed ?? DEFAULT_PRESET_PARAMS.seed,
-  reasoning_effort: params?.reasoning_effort ?? DEFAULT_PRESET_PARAMS.reasoning_effort,
-})
+/**
+ * 采样参数只保留预设里显式写出的字段：留空 = 请求体不出现该字段（接口自己的默认值）。
+ * stop 的空数组与 seed / reasoning_effort 的 null 都视作「未设置」，不会写进请求。
+ */
+const explicitParams = (params: Partial<PresetParams> | undefined): Partial<PresetParams> => {
+  const resolved: Partial<PresetParams> = {}
+  if (params === undefined) {
+    return resolved
+  }
+  if (params.temperature !== undefined) {
+    resolved.temperature = params.temperature
+  }
+  if (params.top_p !== undefined) {
+    resolved.top_p = params.top_p
+  }
+  if (params.max_tokens !== undefined) {
+    resolved.max_tokens = params.max_tokens
+  }
+  if (params.stop !== undefined) {
+    const stop = params.stop.filter((item) => item.trim() !== '')
+    if (stop.length > 0) {
+      resolved.stop = stop
+    }
+  }
+  if (params.presence_penalty !== undefined) {
+    resolved.presence_penalty = params.presence_penalty
+  }
+  if (params.frequency_penalty !== undefined) {
+    resolved.frequency_penalty = params.frequency_penalty
+  }
+  if (params.seed !== undefined && params.seed !== null) {
+    resolved.seed = params.seed
+  }
+  if (params.reasoning_effort !== undefined && params.reasoning_effort !== null) {
+    resolved.reasoning_effort = params.reasoning_effort
+  }
+  return resolved
+}
 
 const resolvedCompaction = (
   compaction: Partial<PresetCompaction> | undefined
@@ -245,9 +317,9 @@ const resolvedMemory = (memory: Partial<PresetMemory> | undefined): PresetMemory
 })
 
 /**
- * 把预设配置解析成运行时完整配置：缺省字段（以及 null 配置）一律回落到系统默认。
- * 默认值就是「未启用预设」时的行为：DeepSeek Anthropic 兼容端点、MODEL、应用提示词、
- * 默认参数、压缩默认开启、记忆默认关闭。
+ * 把预设配置解析成运行时配置：端点 / 模型 / 压缩 / 记忆缺省回落到系统默认；
+ * 采样参数只保留显式写出的字段（留空 = 请求里不发送该字段），提示词空串 = 不发送 system。
+ * 默认值描述的就是「未启用预设」时的行为：DeepSeek Anthropic 兼容端点、MODEL、默认压缩与记忆。
  */
 export const resolvePreset = (config: PresetConfig | null): ResolvedPreset => {
   const baseUrl = config?.base_url?.trim()
@@ -264,7 +336,7 @@ export const resolvePreset = (config: PresetConfig | null): ResolvedPreset => {
     protocol: config?.protocol ?? 'anthropic',
     base_url: baseUrl ? baseUrl.replace(/\/+$/, '') : DEFAULT_PRESET_BASE_URL,
     model: model ? model : DEFAULT_PRESET_MODEL,
-    params: resolvedParams(config?.params),
+    params: explicitParams(config?.params),
     system_prompt: systemPrompt,
     compaction: resolvedCompaction(config?.compaction),
     memory: resolvedMemory(config?.memory),

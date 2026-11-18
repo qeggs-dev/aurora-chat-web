@@ -1,11 +1,11 @@
 /**
- * 运行时环境元信息：告诉模型当前运行平台、应用版本、界面语言与主题。
+ * 运行时环境快照：只用于提示词模板的 `{{env.*}}` 变量，不直接写进请求。
  *
- * 只在构造请求的 system 提示词时现算，不写进会话消息或历史。
- * 缺失字段（拿不到版本、没有 matchMedia 等）优雅降级，绝不抛错影响聊天。
+ * 在渲染预设提示词模板时现算，不写进会话消息或历史；预设提示词为空时请求里没有 system，
+ * 也不会追加任何运行环境元信息。缺失字段（拿不到版本、没有 matchMedia 等）优雅降级，绝不抛错。
  *
- * 注意：这里**不写本地时间**。system 提示词是请求前缀，写入时间会让同一环境下的
- * 前后请求前缀不再一致，KV cache 每轮都失效；需要展示时间的地方用会话消息，不要用提示词。
+ * 注意：这里**不写本地时间**。提示词是请求前缀，写入时间会让同一环境下的前后请求前缀
+ * 不再一致，KV cache 每轮都失效；需要展示时间的地方用会话消息，不要用提示词。
  */
 import { useSettings } from '../settings.js'
 
@@ -123,20 +123,4 @@ export const readRuntimeEnv = (): RuntimeEnv => {
     locale: readLocale(),
     theme: readTheme(),
   }
-}
-
-/**
- * 稳定格式（单行，字段用中文分号分隔；version 缺失时整段省略）：
- * `运行环境：platform=web；app=Aurora Chat；version=0.2.1；locale=zh-CN；theme=light`
- * 字段顺序固定、不含时间，保证同一环境下前后请求的提示词前缀一致（KV cache 友好）。
- */
-export const runtimeMeta = (env: RuntimeEnv = readRuntimeEnv()): string => {
-  const fields = [
-    `platform=${env.platform}`,
-    `app=${env.app}`,
-    ...(env.version ? [`version=${env.version}`] : []),
-    `locale=${env.locale}`,
-    `theme=${env.theme}`,
-  ]
-  return `运行环境：${fields.join('；')}`
 }

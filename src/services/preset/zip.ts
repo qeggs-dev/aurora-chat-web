@@ -1,6 +1,7 @@
 /** preset zip 与 api_configs.json 的解析与校验：路径、大小、扩展名与清单字段都在这里把关。 */
 import { unzipSync } from 'fflate'
 import {
+  assertPresetMetadata,
   DEFAULT_PRESET_COMPACTION,
   DEFAULT_PRESET_ID,
   DEFAULT_PRESET_MEMORY,
@@ -214,47 +215,6 @@ const readSeed = (value: unknown): number | null => {
     return badConfig('params.seed must be an integer or null')
   }
   return value
-}
-
-const readParams = (raw: unknown): PresetParams => {
-  if (raw === undefined || raw === null) {
-    return { ...DEFAULT_PRESET_PARAMS, stop: [] }
-  }
-  if (!isRecord(raw)) {
-    return badConfig('params must be an object')
-  }
-  return {
-    temperature: readNumber(
-      raw.temperature,
-      'params.temperature',
-      0,
-      2,
-      DEFAULT_PRESET_PARAMS.temperature
-    ),
-    top_p: readNumber(raw.top_p, 'params.top_p', 0, 1, DEFAULT_PRESET_PARAMS.top_p),
-    max_tokens: readPositiveInteger(
-      raw.max_tokens,
-      'params.max_tokens',
-      DEFAULT_PRESET_PARAMS.max_tokens
-    ),
-    stop: readStop(raw.stop),
-    presence_penalty: readNumber(
-      raw.presence_penalty,
-      'params.presence_penalty',
-      -2,
-      2,
-      DEFAULT_PRESET_PARAMS.presence_penalty
-    ),
-    frequency_penalty: readNumber(
-      raw.frequency_penalty,
-      'params.frequency_penalty',
-      -2,
-      2,
-      DEFAULT_PRESET_PARAMS.frequency_penalty
-    ),
-    seed: readSeed(raw.seed),
-    reasoning_effort: readReasoningEffort(raw.reasoning_effort),
-  }
 }
 
 /** compaction.prompt 是提示词正文，不设短文本上限，只把全空白视作缺省 */
@@ -500,7 +460,11 @@ const readPartialMemory = (raw: unknown): Partial<PresetMemory> | undefined => {
   return Object.keys(memory).length > 0 ? memory : undefined
 }
 
-/** 严格解析：zip 导入与普通预设保存共用，protocol / base_url / model 必填 */
+/**
+ * 严格解析：zip 导入与普通预设保存共用，protocol / base_url / model 与四项元信息必填。
+ * 元信息（描述 / 作者 / 版本 / 版权声明）trim 后不能为空；copyright 为空直接拒绝整个导入包。
+ * 内置默认预设走 parseDefaultPresetConfig（它只需要 name），不经过这里。
+ */
 const parseFullPresetConfig = (raw: Record<string, unknown>): PresetConfig => {
   const { id, name } = readIdentity(raw)
   if (typeof raw.protocol !== 'string' || !PROTOCOLS.has(raw.protocol as PresetProtocol)) {
@@ -513,7 +477,7 @@ const parseFullPresetConfig = (raw: Record<string, unknown>): PresetConfig => {
   if (!model) {
     return badConfig('model must be a non-empty string')
   }
-  return {
+  const config: PresetConfig = {
     schema: 1,
     id,
     name,
@@ -524,7 +488,8 @@ const parseFullPresetConfig = (raw: Record<string, unknown>): PresetConfig => {
     protocol: raw.protocol as PresetProtocol,
     base_url: raw.base_url.trim().replace(/\/+$/, ''),
     model,
-    params: readParams(raw.params),
+    // 采样参数只保存显式写出的字段：留空 = 请求体不出现该字段（接口默认值）
+    params: readPartialParams(raw.params),
     system_prompt: readSystemPrompt(raw.system_prompt),
     system_prompt_file: readOptionalText(raw.system_prompt_file, 'system_prompt_file'),
     compaction: readCompaction(raw.compaction),
@@ -532,6 +497,8 @@ const parseFullPresetConfig = (raw: Record<string, unknown>): PresetConfig => {
     icon: readFileRef(raw.icon, 'icon'),
     license: readFileRef(raw.license, 'license'),
   }
+  assertPresetMetadata(config)
+  return config
 }
 
 /** 去掉值为 undefined 的键：默认预设的最小记录不落空字段（IndexedDB 会保留 undefined 属性） */

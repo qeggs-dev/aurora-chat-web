@@ -23,7 +23,8 @@ export const en = {
   aboutUpstreamLabel: 'Upstream project',
   aboutOfficialDemoLabel: 'Upstream official demo (not this project)',
   aboutMaintainerLabel: 'Maintainer',
-  aboutMaintainerNote: 'Aurora Chat is maintained by Qeggs; issues and suggestions are welcome on GitHub.',
+  aboutMaintainerNote:
+    'Aurora Chat is maintained by Qeggs; issues and suggestions are welcome on GitHub.',
   aboutOfficialDemoNote:
     'The official online build of the upstream chat-demo project (external link), for comparison only. It is not a page of this project; this project is a community client and is unrelated to it.',
   aboutLicenseLabel: 'Open-source license (MIT)',
@@ -145,7 +146,8 @@ export const en = {
   apiKeyPlaceholder: 'Enter API Key',
   apiKeyVerifying: 'Verifying...',
   apiKeySaved: 'API key saved and verified',
-  apiKeySaveHint: 'Press Enter, click Confirm, or click outside the field to save; the key is verified with /models first.',
+  apiKeySaveHint:
+    'Press Enter, click Confirm, or click outside the field to save; the key is verified with /models first.',
   confirm: 'Confirm',
   apiKeyInvalid: 'Invalid API Key. Please check it and try again.',
   apiKeyVerificationFailed: 'Verification failed: {message}',
@@ -351,8 +353,13 @@ export const en = {
   presetFieldStopHint: 'Separate stop sequences with commas; they are saved as an array.',
   presetApiKeyNote:
     'The API key is configured globally under Data management and is not stored in a preset.',
-  presetPromptNote: 'Leave empty to use the built-in system prompt.',
+  presetPromptNote:
+    'The text area is the complete prompt: when empty, the request has no system field.',
   presetPromptCount: 'Characters: {count}',
+  presetPromptEmptyHint: 'Leave empty = no system prompt is sent (built-in reference: {preview})',
+  presetPromptEmptyHintShort: 'Leave empty = no system prompt is sent',
+  presetParamUnsent: 'Leave empty = not sent (provider default)',
+  presetParamUnsentWithDefault: 'Leave empty = not sent (reference default: {value})',
   presetPromptTemplateNote:
     'The system prompt supports template variables (double braces): {{preset.name}}, {{preset.id}}, {{preset.protocol}}, {{preset.base_url}}, {{preset.model}}, {{preset.params}}, {{preset.memory}}, {{preset.compaction}}, {{preset.dump}}, {{env.platform}}, {{env.app}}, {{env.version}}, {{env.locale}}, {{env.theme}}. Unknown variables are left as-is; there is no time variable (it would break the KV cache).',
   presetPromptTemplateVarsLabel: 'Insert template variable',
@@ -425,8 +432,14 @@ export const en = {
   presetErrorBadPath: 'The preset contains an invalid file path.',
   presetErrorMissingFile: 'The preset is missing a file referenced by its configuration.',
   presetErrorBadFileType: 'The preset contains an unsupported file type.',
-  presetErrorReservedId: 'This id is reserved for a built-in preset and cannot be imported or overwritten.',
-  presetErrorImportedReadOnly: 'Imported presets cannot be edited. Create a new preset to make changes.',
+  presetErrorReservedId:
+    'This id is reserved for a built-in preset and cannot be imported or overwritten.',
+  presetErrorImportedReadOnly:
+    'Imported presets cannot be edited. Create a new preset to make changes.',
+  presetErrorMissingDescription: 'Description is required, so saving or importing was blocked.',
+  presetErrorMissingAuthor: 'Author is required, so saving or importing was blocked.',
+  presetErrorMissingVersion: 'Version is required, so saving or importing was blocked.',
+  presetErrorMissingCopyright: 'Copyright notice is required, so saving or importing was blocked.',
   presetImportedBadge: 'Imported',
   presetImportedReadOnly: 'Imported presets are read-only. Create a new preset to make changes.',
   presetCopyAsNew: 'Duplicate as new preset',
@@ -438,7 +451,8 @@ export const en = {
   presetDefaultEmpty: '(empty)',
   presetDefaultOn: 'on',
   presetDefaultOff: 'off',
-  presetUseBuiltinPrompt: 'Built-in prompt: {preview} (leave empty to use the full built-in prompt)',
+  presetUseBuiltinPrompt:
+    'Built-in prompt: {preview} (leave empty to use the full built-in prompt)',
   presetBuiltinUndeletable: 'Built-in presets cannot be deleted',
   presetSubtabBasic: 'General',
   presetFieldName: 'Name',
@@ -456,6 +470,19 @@ export const en = {
     'Unique identifier; it cannot be changed after creation. Importing or saving replaces a preset with the same id.',
   presetMetadataHint:
     'The name is display-only and can be changed at any time (duplicates allowed); the id is the unique identifier used by the system.',
+  presetMetadataRequiredHint:
+    'Description, author, version and copyright notice are required (built-in presets are exempt). The same rule applies when importing: a preset missing any of them is rejected.',
+  presetMetadataRequiredError: 'Save rejected: {fields} must not be empty.',
+  presetMetadataListSeparator: ', ',
+  presetFieldTextTooLong: 'Must be at most {max} characters',
+  presetSavedNotActive:
+    'Saved, but this preset is not active yet: click Activate and new requests will use it.',
+  presetActivateUnsaved:
+    'There are unsaved changes: save first, then activate (activating loads the saved configuration).',
+  presetNotActiveHint:
+    'This preset is not active: "{name}" is currently in effect. Click Activate to use this preset\'s prompt and parameters for new requests.',
+  presetNotActiveHintNone:
+    'This preset is not active: no preset is currently active. Click Activate to use this preset for new requests.',
   presetDefaultFieldsHint:
     'Built-in default preset: leave protocol / Base URL / model empty to use the system defaults (DeepSeek Anthropic-compatible endpoint and built-in model); other empty fields also use system defaults.',
   presetOptional: 'Optional',

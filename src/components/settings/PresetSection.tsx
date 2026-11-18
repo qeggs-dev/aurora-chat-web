@@ -92,6 +92,10 @@ const presetErrorKeys: Record<string, TranslationKey> = {
   badFileType: 'presetErrorBadFileType',
   reservedId: 'presetErrorReservedId',
   importedReadOnly: 'presetErrorImportedReadOnly',
+  missingDescription: 'presetErrorMissingDescription',
+  missingAuthor: 'presetErrorMissingAuthor',
+  missingVersion: 'presetErrorMissingVersion',
+  missingCopyright: 'presetErrorMissingCopyright',
 }
 
 /** 错误对象按当前语言展示：已知 PresetError 用错误码文案，其余带上原始 message。 */
@@ -107,6 +111,17 @@ const presetErrorStatus = (error: unknown, fallback: TranslationKey): Status =>
         error: true,
       }
     : { key: fallback, params: { message: errorText(error) }, error: true }
+
+/** 元信息必填字段与展示名：保存被拒时在状态栏列出具体字段 */
+const METADATA_FIELD_LABELS: {
+  field: 'description' | 'author' | 'version' | 'copyright'
+  key: TranslationKey
+}[] = [
+  { field: 'description', key: 'presetFieldDescription' },
+  { field: 'author', key: 'presetFieldAuthor' },
+  { field: 'version', key: 'presetFieldVersion' },
+  { field: 'copyright', key: 'presetFieldCopyright' },
+]
 
 /* -------------------------------------------------------------------------------------------------
  * 草稿模型：每个预设一份 draft（config + 数值输入的原文 + 未保存标记）。
@@ -141,7 +156,10 @@ type Draft = {
 type FieldError = { key: TranslationKey; params?: TranslationParams }
 
 type FieldErrors = Partial<
-  Record<TextField | 'base_url' | 'model' | 'name' | 'copyright', FieldError>
+  Record<
+    TextField | 'base_url' | 'model' | 'name' | 'description' | 'author' | 'version' | 'copyright',
+    FieldError
+  >
 >
 
 type NumberRule = {
@@ -162,20 +180,44 @@ const SYSTEM_DEFAULT_PRESET = resolvePreset(null)
 
 /** 应用自带提示词的首行预览（默认预设的提示词空 textarea 的 placeholder） */
 const APP_PROMPT_PREVIEW =
-  APP_SYSTEM_PROMPT.split('\n').find((line) => line.trim())?.trim() ?? ''
+  APP_SYSTEM_PROMPT.split('\n')
+    .find((line) => line.trim())
+    ?.trim() ?? ''
 
-/** 与 services/preset/zip.ts 的校验规则保持一致 */
+/**
+ * 与 services/preset/zip.ts 的校验规则保持一致。
+ * 采样参数（temperature / top_p / max_tokens / penalties）全部可选：留空 = 不发送该参数。
+ */
 const NUMBER_RULES: Record<NumericField, NumberRule> = {
-  temperature: { min: 0, max: 2, integer: false, message: 'presetFieldNumberRange' },
-  top_p: { min: 0, max: 1, integer: false, message: 'presetFieldNumberRange' },
+  temperature: {
+    min: 0,
+    max: 2,
+    integer: false,
+    optional: true,
+    message: 'presetFieldNumberRange',
+  },
+  top_p: { min: 0, max: 1, integer: false, optional: true, message: 'presetFieldNumberRange' },
   max_tokens: {
     min: 1,
     max: MAX_SAFE_INTEGER,
     integer: true,
+    optional: true,
     message: 'presetFieldPositiveInteger',
   },
-  presence_penalty: { min: -2, max: 2, integer: false, message: 'presetFieldNumberRange' },
-  frequency_penalty: { min: -2, max: 2, integer: false, message: 'presetFieldNumberRange' },
+  presence_penalty: {
+    min: -2,
+    max: 2,
+    integer: false,
+    optional: true,
+    message: 'presetFieldNumberRange',
+  },
+  frequency_penalty: {
+    min: -2,
+    max: 2,
+    integer: false,
+    optional: true,
+    message: 'presetFieldNumberRange',
+  },
   seed: {
     min: -MAX_SAFE_INTEGER,
     max: MAX_SAFE_INTEGER,
@@ -205,21 +247,31 @@ const NUMERIC_FIELDS: NumericField[] = [
   'max_results',
 ]
 
+/** 采样参数：留空时不写进请求体；其它数值字段（压缩 / 记忆）是应用内设置，语义不同 */
+const API_PARAM_FIELDS: ReadonlySet<NumericField> = new Set<NumericField>([
+  'temperature',
+  'top_p',
+  'max_tokens',
+  'presence_penalty',
+  'frequency_penalty',
+  'seed',
+])
+
 /** 只有内置默认预设（id default）展示「系统默认：<具体值>」；其它内置演示包仍用通用文案 */
 const isDefaultPresetDraft = (draft: Draft): boolean =>
   draft.builtin && draft.config.id === DEFAULT_PRESET_ID
 
-/** 默认预设空数值字段的 placeholder 文本：系统默认的具体数值（null 表示默认留空） */
+/**
+ * 采样参数空输入时的 placeholder 参考值：只用于展示「不填时接口大概会用什么」，
+ * 留空不会把该值写进请求体。压缩 / 记忆字段仍然是应用内设置，用各自的系统默认。
+ */
 const SYSTEM_DEFAULT_NUMBER_TEXT: Record<NumericField, string | null> = {
-  temperature: String(SYSTEM_DEFAULT_PRESET.params.temperature),
-  top_p: String(SYSTEM_DEFAULT_PRESET.params.top_p),
-  max_tokens: String(SYSTEM_DEFAULT_PRESET.params.max_tokens),
-  presence_penalty: String(SYSTEM_DEFAULT_PRESET.params.presence_penalty),
-  frequency_penalty: String(SYSTEM_DEFAULT_PRESET.params.frequency_penalty),
-  seed:
-    SYSTEM_DEFAULT_PRESET.params.seed === null
-      ? null
-      : String(SYSTEM_DEFAULT_PRESET.params.seed),
+  temperature: String(DEFAULT_PRESET_PARAMS.temperature),
+  top_p: String(DEFAULT_PRESET_PARAMS.top_p),
+  max_tokens: String(DEFAULT_PRESET_PARAMS.max_tokens),
+  presence_penalty: String(DEFAULT_PRESET_PARAMS.presence_penalty),
+  frequency_penalty: String(DEFAULT_PRESET_PARAMS.frequency_penalty),
+  seed: null,
   trigger_tokens: String(SYSTEM_DEFAULT_PRESET.compaction.trigger_tokens),
   keep_recent_messages: String(SYSTEM_DEFAULT_PRESET.compaction.keep_recent_messages),
   max_results: String(SYSTEM_DEFAULT_PRESET.memory.max_results),
@@ -230,6 +282,8 @@ const EMPTY_ERRORS: FieldErrors = {}
 const URL_PATTERN = /^https?:\/\/\S+$/i
 const MAX_NAME_LENGTH = 80
 const MAX_COPYRIGHT_LENGTH = 500
+/** 与 services/preset/zip.ts 的 MAX_TEXT_FIELD 一致：描述 / 作者 / 版本 */
+const MAX_METADATA_LENGTH = 400
 
 const ruleError = (rule: NumberRule): FieldError =>
   rule.message === 'presetFieldPositiveInteger' || rule.message === 'presetFieldSeedInvalid'
@@ -260,18 +314,15 @@ const isFieldError = (value: number | null | FieldError): value is FieldError =>
   typeof value === 'object' && value !== null
 
 /**
- * 保存前校验：普通预设的协议 / Base URL / 模型与数值字段必填；
- * 内置默认预设（含被用户编辑后）允许协议 / Base URL / 模型与数值字段留空（= 系统默认），
- * 但名称始终必填，已填写的字段仍按原规则校验。
+ * 保存前校验：
+ * - 采样参数全部可选（留空 = 不发送），已填写的按范围校验；
+ * - 普通预设必填协议 / Base URL / 模型，且描述 / 作者 / 版本 / 版权声明（trim 后非空）；
+ * - 内置预设（默认预设）豁免上述必填项，只有名称始终必填；已填写的字段仍按原规则校验。
  */
 const validateDraft = (draft: Draft): FieldErrors => {
   const { text, config, builtin } = draft
   const errors: FieldErrors = {}
   for (const field of NUMERIC_FIELDS) {
-    const rule = NUMBER_RULES[field]
-    if (builtin && !text[field].trim() && !rule.optional) {
-      continue
-    }
     const parsed = parseNumberField(field, text[field])
     if (isFieldError(parsed)) {
       errors[field] = parsed
@@ -294,8 +345,30 @@ const validateDraft = (draft: Draft): FieldErrors => {
   } else if (name.length > MAX_NAME_LENGTH) {
     errors.name = { key: 'presetFieldNameTooLong', params: { max: MAX_NAME_LENGTH } }
   }
+  const metadata: [keyof FieldErrors, string | undefined][] = [
+    ['description', config.description],
+    ['author', config.author],
+    ['version', config.version],
+  ]
+  for (const [field, value] of metadata) {
+    const textValue = value?.trim() ?? ''
+    if (!textValue) {
+      if (!builtin) {
+        errors[field] = { key: 'presetFieldRequired' }
+      }
+    } else if (textValue.length > MAX_METADATA_LENGTH) {
+      errors[field] = {
+        key: 'presetFieldTextTooLong',
+        params: { max: MAX_METADATA_LENGTH },
+      }
+    }
+  }
   const copyright = config.copyright?.trim() ?? ''
-  if (copyright.length > MAX_COPYRIGHT_LENGTH) {
+  if (!copyright) {
+    if (!builtin) {
+      errors.copyright = { key: 'presetFieldRequired' }
+    }
+  } else if (copyright.length > MAX_COPYRIGHT_LENGTH) {
     errors.copyright = {
       key: 'presetCopyrightTooLong',
       params: { max: MAX_COPYRIGHT_LENGTH },
@@ -338,25 +411,20 @@ const textFromConfig = (config: PresetConfig): TextMap => {
   }
 }
 
-/** 默认预设的编辑草稿：把系统默认值真正填进空字段，让用户看到当前实际生效的配置 */
+/**
+ * 内置预设的编辑草稿：协议 / Base URL / 模型 / 记忆 / 压缩把系统默认值真正填进空字段，
+ * 让用户看到当前实际生效的配置；提示词与采样参数**不预填**（空着 = 不发送 / 不设置）。
+ */
 const withSystemDefaults = (config: PresetConfig): PresetConfig => {
   if (!isBuiltinPreset(config)) {
     return config
   }
   const defaults = SYSTEM_DEFAULT_PRESET
-  const params: NonNullable<PresetConfig['params']> = { ...defaults.params }
-  for (const [key, value] of Object.entries(config.params ?? {})) {
-    if (value !== undefined) {
-      ;(params as Record<string, unknown>)[key] = value
-    }
-  }
   return {
     ...config,
     protocol: config.protocol ?? defaults.protocol,
     base_url: config.base_url?.trim() ? config.base_url : defaults.base_url,
     model: config.model?.trim() ? config.model : defaults.model,
-    params,
-    system_prompt: config.system_prompt?.trim() ? config.system_prompt : APP_SYSTEM_PROMPT,
     memory: { ...defaults.memory, ...(config.memory ?? {}) },
     compaction: { ...defaults.compaction, ...(config.compaction ?? {}) },
   }
@@ -486,53 +554,55 @@ const partialConfigFromDraft = (draft: Draft): PresetConfig => {
   return next
 }
 
-/** 普通预设的保存形态：完整配置，协议 / Base URL / 模型与数值字段必填（与 zip 校验一致） */
+/**
+ * 普通预设的保存形态：完整配置，协议 / Base URL / 模型与四项元信息必填（与 zip 校验一致）。
+ * 采样参数只写显式填写的字段：留空 = 请求体不出现该字段（接口默认值）。
+ */
 const strictConfigFromDraft = (draft: Draft): PresetConfig => {
   const { config, text } = draft
-  const params = config.params ?? {}
   const compaction = config.compaction ?? {}
   const memory = config.memory ?? {}
-  const seed = parseNumberField('seed', text.seed)
   const prompt = config.system_prompt
   const compactionPrompt = compaction.prompt
+  const params: NonNullable<PresetConfig['params']> = {}
+  const numericParams = [
+    'temperature',
+    'top_p',
+    'max_tokens',
+    'presence_penalty',
+    'frequency_penalty',
+  ] as const
+  for (const field of numericParams) {
+    const value = optionalNumberFromText(field, text)
+    if (value !== undefined) {
+      params[field] = value
+    }
+  }
+  const seed = optionalNumberFromText('seed', text)
+  if (seed !== undefined) {
+    params.seed = seed
+  }
+  const stop = stopFromText(text)
+  if (stop.length > 0) {
+    params.stop = stop
+  }
+  const reasoningEffort = config.params?.reasoning_effort
+  if (reasoningEffort) {
+    params.reasoning_effort = reasoningEffort
+  }
   return {
     schema: 1,
     id: config.id,
     name: config.name.trim(),
-    description: config.description,
-    author: config.author,
-    version: config.version,
-    copyright: config.copyright,
+    ...(config.description === undefined ? {} : { description: config.description.trim() }),
+    ...(config.author === undefined ? {} : { author: config.author.trim() }),
+    ...(config.version === undefined ? {} : { version: config.version.trim() }),
+    ...(config.copyright === undefined ? {} : { copyright: config.copyright.trim() }),
     protocol: config.protocol ?? 'anthropic',
     base_url: (config.base_url ?? '').trim().replace(/\/+$/, ''),
     model: (config.model ?? '').trim(),
-    system_prompt: prompt?.trim() ? prompt : undefined,
-    params: {
-      temperature: numberFromText(
-        'temperature',
-        text,
-        params.temperature ?? DEFAULT_PRESET_PARAMS.temperature
-      ),
-      top_p: numberFromText('top_p', text, params.top_p ?? DEFAULT_PRESET_PARAMS.top_p),
-      max_tokens: numberFromText(
-        'max_tokens',
-        text,
-        params.max_tokens ?? DEFAULT_PRESET_PARAMS.max_tokens
-      ),
-      stop: stopFromText(text),
-      presence_penalty: numberFromText(
-        'presence_penalty',
-        text,
-        params.presence_penalty ?? DEFAULT_PRESET_PARAMS.presence_penalty
-      ),
-      frequency_penalty: numberFromText(
-        'frequency_penalty',
-        text,
-        params.frequency_penalty ?? DEFAULT_PRESET_PARAMS.frequency_penalty
-      ),
-      seed: typeof seed === 'number' ? seed : null,
-      reasoning_effort: params.reasoning_effort ?? null,
-    },
+    ...(prompt?.trim() ? { system_prompt: prompt } : {}),
+    ...(Object.keys(params).length > 0 ? { params } : {}),
     compaction: {
       enabled: compaction.enabled ?? DEFAULT_PRESET_COMPACTION.enabled,
       trigger_tokens: numberFromText(
@@ -588,7 +658,6 @@ const summaryConfig = (summary: PresetSummary): PresetConfig =>
         protocol: summary.protocol,
         base_url: summary.baseUrl,
         model: summary.model,
-        params: { ...DEFAULT_PRESET_PARAMS, stop: [] },
         compaction: { ...DEFAULT_PRESET_COMPACTION },
         memory: { ...DEFAULT_PRESET_MEMORY },
       }
@@ -715,7 +784,10 @@ const SwitchField = ({
   </div>
 )
 
-/** 数值输入：显示草稿里的输入原文，错误由保存前置校验产生 */
+/**
+ * 数值输入：显示草稿里的输入原文，错误由保存前置校验产生。
+ * 采样参数留空 = 不发送该参数；placeholder 给出接口参考值，不写入请求体。
+ */
 const NumberField = ({
   field,
   label,
@@ -732,11 +804,15 @@ const NumberField = ({
   const rule = NUMBER_RULES[field]
   const error = api.errors[field]
   const defaultText = SYSTEM_DEFAULT_NUMBER_TEXT[field]
-  const placeholder = isDefaultPresetDraft(draft)
-    ? t('presetDefaultValue', { value: defaultText ?? t('presetDefaultEmpty') })
-    : draft.builtin
-      ? t('presetUseSystemDefault')
-      : undefined
+  const placeholder = API_PARAM_FIELDS.has(field)
+    ? defaultText === null
+      ? t('presetParamUnsent')
+      : t('presetParamUnsentWithDefault', { value: defaultText })
+    : isDefaultPresetDraft(draft)
+      ? t('presetDefaultValue', { value: defaultText ?? t('presetDefaultEmpty') })
+      : draft.builtin
+        ? t('presetUseSystemDefault')
+        : undefined
   return (
     <Field label={label} htmlFor={id} error={error ? t(error.key, error.params) : undefined}>
       <input
@@ -914,6 +990,17 @@ export const PresetSection = () => {
     selectedId !== null &&
     presets.some((preset) => preset.id === selectedId && preset.source === 'imported')
   const isActive = selectedId !== null && selectedId === activeId
+  /** 当前启用预设的展示名；没有任何启用项时为 null */
+  const activePreset =
+    activeId === null ? undefined : presets.find((preset) => preset.id === activeId)
+  const activeName =
+    activePreset === undefined
+      ? null
+      : presetName(
+          activePreset.id,
+          activePreset.name,
+          activePreset.builtin === true || activePreset.id === DEFAULT_PRESET_ID
+        )
   const errors =
     selected && selectedId && showErrors[selectedId] ? validateDraft(selected) : EMPTY_ERRORS
   const storeErrorStatus: Status =
@@ -926,8 +1013,13 @@ export const PresetSection = () => {
   const onPick = async (file: File) => {
     setImportStatus(null)
     try {
-      await importPresetZip(file)
+      const imported = await importPresetZip(file)
       showToast({ key: 'presetImported' })
+      // 导入不会抢占当前启用项：切到新预设并明确提示「尚未启用」
+      setSelectedId(imported.id)
+      if (activeIdRef.current !== imported.id) {
+        setImportStatus({ key: 'presetSavedNotActive', params: { name: imported.name } })
+      }
     } catch (error) {
       setImportStatus(presetErrorStatus(error, 'presetImportFailed'))
     }
@@ -970,10 +1062,7 @@ export const PresetSection = () => {
     delete base.builtin
     let nextId = `custom-${Date.now().toString(36)}`
     let suffix = 1
-    while (
-      draftsRef.current[nextId] ||
-      presetsRef.current.some((preset) => preset.id === nextId)
-    ) {
+    while (draftsRef.current[nextId] || presetsRef.current.some((preset) => preset.id === nextId)) {
       suffix += 1
       nextId = `custom-${Date.now().toString(36)}-${suffix}`
     }
@@ -1029,13 +1118,27 @@ export const PresetSection = () => {
     const issues = validateDraft(draft)
     setShowErrors((prev) => ({ ...prev, [id]: true }))
     if (Object.keys(issues).length > 0) {
-      setSaveStatus({ key: 'presetValidationFailed', error: true })
+      // 元信息缺失时明确列出字段（字段级错误在「基本信息」里同时标红）
+      const missingMetadata = METADATA_FIELD_LABELS.filter(({ field }) => issues[field]).map(
+        ({ key }) => t(key)
+      )
+      setSaveStatus(
+        missingMetadata.length > 0
+          ? {
+              key: 'presetMetadataRequiredError',
+              params: { fields: missingMetadata.join(t('presetMetadataListSeparator')) },
+              error: true,
+            }
+          : { key: 'presetValidationFailed', error: true }
+      )
       return
     }
     setSaving(true)
     setSaveStatus(null)
     try {
       const config = configFromDraft(draft)
+      // 保存本身不会切换启用项（只有当前启用项会被重新载入）：非启用预设保存后需手动「启用」
+      const wasActive = activeIdRef.current === config.id
       await savePresetJson(JSON.stringify(config))
       const stored = (await loadPresetConfig(config.id)) ?? config
       setDrafts((prev) => {
@@ -1047,7 +1150,12 @@ export const PresetSection = () => {
       })
       setExtraIds((prev) => prev.filter((extra) => extra !== id))
       setShowErrors((prev) => ({ ...prev, [id]: false }))
-      showToast({ key: 'presetSaved' })
+      if (wasActive) {
+        showToast({ key: 'presetSaved' })
+      } else {
+        // 明确告诉用户：已保存，但请求仍会使用当前启用项，必须点「启用」才生效
+        setSaveStatus({ key: 'presetSavedNotActive', params: { name: config.name } })
+      }
     } catch (error) {
       setSaveStatus(presetErrorStatus(error, 'presetSaveFailed'))
     } finally {
@@ -1063,9 +1171,15 @@ export const PresetSection = () => {
     if (!presetsRef.current.some((preset) => preset.id === id)) {
       return
     }
+    // 启用读取的是已保存配置：草稿里有未保存修改时先拦住，避免提示词被旧值覆盖
+    if (draftsRef.current[id]?.dirty) {
+      setSaveStatus({ key: 'presetActivateUnsaved', error: true })
+      return
+    }
     setPending({ id, action: 'activate' })
     try {
       await activatePreset(id)
+      setSaveStatus(null)
     } catch {
       showToast({ key: 'presetActivateFailed', type: 'error' })
     } finally {
@@ -1318,6 +1432,16 @@ export const PresetSection = () => {
                   <span>{t('presetImportedReadOnly')}</span>
                 </div>
               ) : null}
+              {selectedStored && !isActive ? (
+                <div className={styles.activateNote} role="note">
+                  <span className={styles.activateNoteBadge}>{t('presetActivate')}</span>
+                  <span>
+                    {activeName === null
+                      ? t('presetNotActiveHintNone')
+                      : t('presetNotActiveHint', { name: activeName })}
+                  </span>
+                </div>
+              ) : null}
               <DraftEditor draft={selected} api={api} />
             </>
           ) : selectedId ? (
@@ -1423,8 +1547,14 @@ const BasicPanel = ({ draft, api }: PanelProps) => {
   const id = useId()
   const { config, builtin } = draft
   const nameError = api.errors.name
+  const descriptionError = api.errors.description
+  const authorError = api.errors.author
+  const versionError = api.errors.version
   const copyrightError = api.errors.copyright
-  const optionalPlaceholder = builtin ? t('presetUseSystemDefault') : t('presetOptional')
+  /** 非内置预设的元信息必填；内置预设留空 = 使用系统默认 */
+  const required = !builtin
+  const star = required ? ' *' : ''
+  const placeholder = builtin ? t('presetUseSystemDefault') : undefined
   return (
     <div className={styles.panelBody}>
       {builtin ? (
@@ -1449,39 +1579,55 @@ const BasicPanel = ({ draft, api }: PanelProps) => {
         />
       </Field>
       <div className={styles.note}>{t('presetMetadataHint')}</div>
-      <Field label={t('presetFieldDescription')} htmlFor={`${id}-description`}>
+      {required ? <div className={styles.note}>{t('presetMetadataRequiredHint')}</div> : null}
+      <Field
+        label={`${t('presetFieldDescription')}${star}`}
+        htmlFor={`${id}-description`}
+        error={descriptionError ? t(descriptionError.key, descriptionError.params) : undefined}
+      >
         <textarea
           id={`${id}-description`}
-          className={styles.textarea}
+          className={clsx(styles.textarea, descriptionError && styles.inputInvalid)}
           rows={2}
           value={config.description ?? ''}
-          placeholder={optionalPlaceholder}
+          placeholder={placeholder}
           readOnly={api.readOnly}
+          aria-invalid={descriptionError ? true : undefined}
           onChange={(event) =>
             api.setConfig((current) => ({ ...current, description: event.target.value }))
           }
         />
       </Field>
       <div className={styles.grid}>
-        <Field label={t('presetFieldAuthor')} htmlFor={`${id}-author`}>
+        <Field
+          label={`${t('presetFieldAuthor')}${star}`}
+          htmlFor={`${id}-author`}
+          error={authorError ? t(authorError.key, authorError.params) : undefined}
+        >
           <input
             id={`${id}-author`}
-            className={styles.input}
+            className={clsx(styles.input, authorError && styles.inputInvalid)}
             value={config.author ?? ''}
-            placeholder={optionalPlaceholder}
+            placeholder={placeholder}
             readOnly={api.readOnly}
+            aria-invalid={authorError ? true : undefined}
             onChange={(event) =>
               api.setConfig((current) => ({ ...current, author: event.target.value }))
             }
           />
         </Field>
-        <Field label={t('presetFieldVersion')} htmlFor={`${id}-version`}>
+        <Field
+          label={`${t('presetFieldVersion')}${star}`}
+          htmlFor={`${id}-version`}
+          error={versionError ? t(versionError.key, versionError.params) : undefined}
+        >
           <input
             id={`${id}-version`}
-            className={styles.input}
+            className={clsx(styles.input, versionError && styles.inputInvalid)}
             value={config.version ?? ''}
-            placeholder={optionalPlaceholder}
+            placeholder={placeholder}
             readOnly={api.readOnly}
+            aria-invalid={versionError ? true : undefined}
             onChange={(event) =>
               api.setConfig((current) => ({ ...current, version: event.target.value }))
             }
@@ -1489,7 +1635,7 @@ const BasicPanel = ({ draft, api }: PanelProps) => {
         </Field>
       </div>
       <Field
-        label={t('presetFieldCopyright')}
+        label={`${t('presetFieldCopyright')}${star}`}
         htmlFor={`${id}-copyright`}
         error={copyrightError ? t(copyrightError.key, copyrightError.params) : undefined}
         hint={t('presetCopyrightHint')}
@@ -1499,9 +1645,7 @@ const BasicPanel = ({ draft, api }: PanelProps) => {
           className={clsx(styles.textarea, copyrightError && styles.inputInvalid)}
           rows={3}
           value={config.copyright ?? ''}
-          placeholder={
-            builtin ? t('presetUseSystemDefault') : t('presetCopyrightPlaceholder')
-          }
+          placeholder={builtin ? t('presetUseSystemDefault') : t('presetCopyrightPlaceholder')}
           readOnly={api.readOnly}
           aria-invalid={copyrightError ? true : undefined}
           onChange={(event) =>
@@ -1536,7 +1680,6 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
     'idle'
   )
   const [modelListError, setModelListError] = useState('')
-  const modelListId = `${id}-model-options`
 
   const loadModelList = async () => {
     if (!apiKey) {
@@ -1551,6 +1694,8 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
       setModels(list)
       setModelListState(list.length === 0 ? 'empty' : 'idle')
     } catch (error) {
+      // 失败时不保留旧列表，只显示错误，避免列表看起来仍然可用
+      setModels([])
       setModelListState('error')
       setModelListError(error instanceof Error ? error.message : String(error))
     }
@@ -1626,7 +1771,6 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
             id={`${id}-model`}
             className={clsx(styles.input, modelError && styles.inputInvalid)}
             spellCheck={false}
-            list={modelListId}
             value={config.model ?? ''}
             placeholder={modelPlaceholder}
             readOnly={api.readOnly}
@@ -1646,29 +1790,39 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
               : t('presetModelListFetch')}
           </Button>
         </div>
-        <datalist id={modelListId}>
-          {models.map((model) => (
-            <option key={model} value={model} />
-          ))}
-        </datalist>
         {models.length > 0 ? (
-          <Select
-            ariaLabel={t('presetModelListSelect')}
-            className={styles.select}
-            value={config.model ?? ''}
-            placeholder={t('presetModelListSelect')}
-            options={models.map((model) => ({ value: model, label: model }))}
-            disabled={api.readOnly}
-            onChange={(model) => api.setConfig((current) => ({ ...current, model }))}
-          />
+          // 模型列表固定在输入框下方，独立滚动；点一项即写入 model，当前模型高亮
+          <div className={styles.modelList} role="listbox" aria-label={t('presetModelListSelect')}>
+            {models.map((model) => {
+              const selected = model === (config.model ?? '')
+              return (
+                <button
+                  key={model}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  className={clsx(styles.modelItem, selected && styles.modelItemSelected)}
+                  onClick={() => api.setConfig((current) => ({ ...current, model }))}
+                >
+                  <span className={styles.modelName}>{model}</span>
+                  {selected ? <span className={styles.modelCheck}>✓</span> : null}
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
+        {modelListState === 'loading' ? (
+          <div className={styles.modelHint} role="status">
+            {t('presetModelListFetching')}
+          </div>
         ) : null}
         {modelListState === 'error' ? (
-          <div className={styles.note}>
+          <div className={styles.modelHint} role="alert">
             {t('presetModelListError')} {modelListError}
           </div>
         ) : null}
         {modelListState === 'empty' ? (
-          <div className={styles.note}>{t('presetModelListEmpty')}</div>
+          <div className={styles.modelHint}>{t('presetModelListEmpty')}</div>
         ) : null}
       </Field>
       <div className={styles.note}>{t('presetApiKeyNote')}</div>
@@ -1676,16 +1830,12 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
   )
 }
 
-/** 模型参数：采样与生成参数，所有数值字段在保存前按 zip.ts 的规则校验 */
+/** 模型参数：采样参数留空 = 不发送（接口默认值），已填写的按 zip.ts 的规则校验 */
 const ParamsPanel = ({ draft, api }: PanelProps) => {
   const t = useTranslate()
   const stopId = useId()
-  const defaultDraft = isDefaultPresetDraft(draft)
-  const stopPlaceholder = defaultDraft
-    ? t('presetDefaultValue', { value: t('presetDefaultEmpty') })
-    : draft.builtin
-      ? t('presetUseSystemDefault')
-      : undefined
+  // 留空 = 请求体里不出现 stop / 采样参数；不发送占位提示
+  const stopPlaceholder = t('presetParamUnsent')
   const reasoningOptions: SelectOption<string>[] = [
     { value: '', label: t('presetReasoningEffortNone') },
     ...REASONING_EFFORTS.map((effort) => ({ value: effort, label: effort })),
@@ -1745,19 +1895,17 @@ const ParamsPanel = ({ draft, api }: PanelProps) => {
   )
 }
 
-/** 提示词：留空使用应用自带；显示字数；支持 {{preset.*}} / {{env.*}} 模板变量 */
+/** 提示词：textarea 内容就是完整提示词原文；空 = 请求里不出现 system；支持模板变量 */
 const PromptPanel = ({ draft, api }: PanelProps) => {
   const t = useTranslate()
   const id = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const prompt = draft.config.system_prompt ?? ''
   const defaultDraft = isDefaultPresetDraft(draft)
-  // 默认预设：空 textarea 直接显示应用自带提示词的首行，用户能看出留空实际会发什么
+  // 空 textarea 的说明：留空 = 不发送 system；默认预设额外给出应用自带提示词作为参考
   const placeholder = defaultDraft
-    ? t('presetUseBuiltinPrompt', { preview: APP_PROMPT_PREVIEW })
-    : draft.builtin
-      ? t('presetUseSystemDefault')
-      : undefined
+    ? t('presetPromptEmptyHint', { preview: APP_PROMPT_PREVIEW })
+    : t('presetPromptEmptyHintShort')
   /** 在光标处插入模板变量；插入后把光标放到变量后面继续输入 */
   const insertVariable = (variable: string) => {
     if (api.readOnly) {
@@ -1978,7 +2126,11 @@ const MemoryPanel = ({ draft, api }: PanelProps) => {
                   disabled={busy}
                   onClick={() => void deleteEntry(entry.id)}
                 >
-                  <PackIcon slot={STYLE_SLOTS.iconDelete} size={14} fallback={<IconTrashOutline16 />} />
+                  <PackIcon
+                    slot={STYLE_SLOTS.iconDelete}
+                    size={14}
+                    fallback={<IconTrashOutline16 />}
+                  />
                 </Button>
               </div>
               <div className={styles.memoryContent}>{entry.content}</div>
