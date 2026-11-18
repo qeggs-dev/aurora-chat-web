@@ -102,11 +102,16 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* 标题栏同时是拖动手柄：pointer 拖动，触屏交给 pointer events（不做页面滚动/缩放） */
 .panelHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  cursor: move;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .panelTitle {

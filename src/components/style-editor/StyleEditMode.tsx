@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useIsMobile } from '../../app/viewport.js'
 import { useTranslate } from '../../i18n/index.js'
 import { useSettings } from '../../services/settings.js'
@@ -18,7 +18,8 @@ import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import settingsStyles from '../settings/Settings.module.css'
-import { StyleEditPanel } from './StyleEditPanel.js'
+import { StyleEditPanel, type StyleEditPanelDragHandlers } from './StyleEditPanel.js'
+import { clampPanelPosition } from './panelPosition.js'
 import {
   detectPlatform,
   findStyleEditTarget,
@@ -42,6 +43,16 @@ type StyleEditMenuState = {
   target: string
   /** 长按来源、且控件注册了原长按操作时才有该字段 */
   longPress?: { durationMs: number; action: StyleLongPressAction }
+}
+
+/** 拖动后的面板位置 + 固定尺寸（null = 使用 CSS 默认位置；进入 / 退出编辑模式时重置） */
+type PanelRect = {
+  left: number
+  top: number
+  width: number
+  height: number
+  /** 标题栏高度：面板高于视口时用它保证拖动手柄仍可抓取 */
+  titleHeight: number
 }
 
 /** 退出时恢复样式用的主题：编辑期间主题被固定成具体亮/暗值 */
@@ -83,6 +94,110 @@ const StyleEditModeActive = () => {
 
   const assetUrls = useRef(new Map<string, { blob: Blob; url: string }>())
   const themedUrls = useRef(new Map<string, { blob: Blob; url: string }>())
+
+  /* ===== 悬浮面板拖动：标题栏是唯一手柄，位置在进入 / 退出编辑模式时重置 ===== */
+  const panelRef = useRef<HTMLElement | null>(null)
+  const panelDrag = useRef<{
+    pointerId: number
+    offsetX: number
+    offsetY: number
+    width: number
+    height: number
+    titleHeight: number
+  } | null>(null)
+  const [panelRect, setPanelRect] = useState<PanelRect | null>(null)
+
+  const onPanelDragStart = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return
+    }
+    const panel = panelRef.current
+    if (!panel) {
+      return
+    }
+    const rect = panel.getBoundingClientRect()
+    const titleHeight = event.currentTarget.getBoundingClientRect().height
+    panelDrag.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      width: rect.width,
+      height: rect.height,
+      titleHeight,
+    }
+    setPanelRect({
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      titleHeight,
+    })
+    event.currentTarget.setPointerCapture(event.pointerId)
+    // 拖动期间不选中文字、不触发浏览器原生拖拽
+    event.preventDefault()
+  }
+
+  const onPanelDragMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const drag = panelDrag.current
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return
+    }
+    const next = clampPanelPosition(
+      { left: event.clientX - drag.offsetX, top: event.clientY - drag.offsetY },
+      { width: drag.width, height: drag.height, titleHeight: drag.titleHeight },
+      { width: window.innerWidth, height: window.innerHeight }
+    )
+    setPanelRect({
+      left: next.left,
+      top: next.top,
+      width: drag.width,
+      height: drag.height,
+      titleHeight: drag.titleHeight,
+    })
+  }
+
+  const onPanelDragEnd = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const drag = panelDrag.current
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return
+    }
+    panelDrag.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  const panelDragHandlers: StyleEditPanelDragHandlers = {
+    onPointerDown: onPanelDragStart,
+    onPointerMove: onPanelDragMove,
+    onPointerUp: onPanelDragEnd,
+    onPointerCancel: onPanelDragEnd,
+  }
+
+  /** 窗口尺寸变化时把已拖动的面板重新夹回视口（标题栏始终可抓取） */
+  const panelDragged = panelRect !== null
+  useEffect(() => {
+    if (!panelDragged) {
+      return
+    }
+    const onResize = (): void => {
+      setPanelRect((current) => {
+        if (!current) {
+          return current
+        }
+        const next = clampPanelPosition(
+          { left: current.left, top: current.top },
+          { width: current.width, height: current.height, titleHeight: current.titleHeight },
+          { width: window.innerWidth, height: window.innerHeight }
+        )
+        return next.left === current.left && next.top === current.top
+          ? current
+          : { ...current, left: next.left, top: next.top }
+      })
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [panelDragged])
 
   /**
    * 实时预览：草稿每次变化都编译成临时 ActiveStyle 并应用。
@@ -442,8 +557,25 @@ const StyleEditModeActive = () => {
         </div>
       ) : null}
       {panelOpen ? (
-        <aside className={styles.panel} aria-label={t('styleEditPanel')}>
-          <StyleEditPanel />
+        <aside
+          ref={panelRef}
+          className={styles.panel}
+          style={
+            panelRect
+              ? {
+                  left: panelRect.left,
+                  top: panelRect.top,
+                  width: panelRect.width,
+                  height: panelRect.height,
+                  right: 'auto',
+                  bottom: 'auto',
+                  boxSizing: 'border-box',
+                }
+              : undefined
+          }
+          aria-label={t('styleEditPanel')}
+        >
+          <StyleEditPanel dragHandlers={panelDragHandlers} />
         </aside>
       ) : null}
       {menu && menuPosition ? (

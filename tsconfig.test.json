@@ -36,6 +36,7 @@
     "src/services/style/activation.ts",
     "src/components/settings/presetStatus.ts",
     "src/components/settings/presetDraftStore.ts",
+    "src/components/style-editor/panelPosition.ts",
     "src/services/chat/compaction.ts",
     "src/services/memory/schema.ts",
     "src/services/memory/store.ts",

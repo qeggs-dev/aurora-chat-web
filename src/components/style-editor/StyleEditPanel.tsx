@@ -1,5 +1,12 @@
 import clsx from 'clsx'
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react'
 import { useTranslate, type TranslationMessage } from '../../i18n/index.js'
 import { PALETTE_VARS } from '../../services/style/apply.js'
 import {
@@ -892,10 +899,26 @@ const PaletteSection = () => {
 }
 
 /**
+ * 面板标题栏的拖动事件：由 StyleEditMode 统一处理（位置状态也在那里），
+ * 面板只把标题栏作为拖动手柄转发 pointerdown/move/up/cancel。
+ */
+export type StyleEditPanelDragHandlers = {
+  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void
+  onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void
+  onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => void
+}
+
+/**
  * 编辑模式侧面板：选中控件时显示该控件的修改面板，下面始终保留非元素级资源
  * （基本信息 / 主题 / 字体 / 包图标与封面 / 配色）的轻量表单。
+ * 标题栏是拖动手柄（`dragHandlers` 由编辑模式传入），面板内部交互不受影响。
  */
-export const StyleEditPanel = () => {
+export const StyleEditPanel = ({
+  dragHandlers,
+}: {
+  dragHandlers?: StyleEditPanelDragHandlers
+}) => {
   const t = useTranslate()
   const selectedSlot = useStyleEditStore((state) => state.selectedSlot)
   const issues = useStyleEditStore((state) => state.issues)
@@ -905,7 +928,15 @@ export const StyleEditPanel = () => {
   )
   return (
     <div className={styles.panelBody}>
-      <div className={styles.panelHead}>
+      <div
+        className={styles.panelHead}
+        data-style-edit-drag-handle
+        onPointerDown={dragHandlers?.onPointerDown}
+        onPointerMove={dragHandlers?.onPointerMove}
+        onPointerUp={dragHandlers?.onPointerUp}
+        onPointerCancel={dragHandlers?.onPointerCancel}
+        onContextMenu={(event) => event.preventDefault()}
+      >
         <span className={styles.panelTitle}>{t('styleEditPanel')}</span>
         <span className={dirty ? styles.panelDirty : styles.panelSaved}>
           {t(dirty ? 'styleEditDirtyBadge' : 'styleEditSavedBadge')}
