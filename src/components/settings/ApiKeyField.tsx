@@ -56,19 +56,29 @@ export const ApiKeyField = ({ editor }: { editor: ApiKeyEditor }) => {
                 }
               }}
               onBlur={() => {
-                // 修改时没输入就离开，回到已保存的状态
-                if (apiKey && !form.value.trim()) {
-                  setEditing(false)
+                // 点击别处（失去焦点）也视为提交：有内容且与已保存的不同就直接校验保存，
+                // 这样不需要记住「必须按回车」；清空则回到已保存状态。
+                const next = form.value.trim()
+                if (!next) {
+                  if (apiKey) {
+                    setEditing(false)
+                  }
+                  return
                 }
+                if (next === apiKey) {
+                  setEditing(false)
+                  return
+                }
+                void form.submit()
               }}
             />
-            {!isMobile && form.value.trim() ? (
+            {!isMobile ? (
               <>
                 <span className={styles.divider} />
                 <button
                   type="button"
                   className={styles.confirm}
-                  disabled={form.verifying}
+                  disabled={!form.value.trim() || form.verifying}
                   // 保持输入框焦点
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => void form.submit()}
@@ -79,6 +89,7 @@ export const ApiKeyField = ({ editor }: { editor: ApiKeyEditor }) => {
             ) : null}
           </div>
         )}
+        {showInput ? <div className={styles.apiKeyHint}>{t('apiKeySaveHint')}</div> : null}
         {showInput && form.error ? <div className={styles.error}>{form.error}</div> : null}
       </div>
     </div>
@@ -88,11 +99,11 @@ export const ApiKeyField = ({ editor }: { editor: ApiKeyEditor }) => {
 /** 移动端：输入 API Key 时在选项下方显示整行「确定」 */
 export const ApiKeyConfirm = ({ editor: { showInput, form } }: { editor: ApiKeyEditor }) => {
   const t = useTranslate()
-  return showInput && form.value.trim() ? (
+  return showInput ? (
     <button
       type="button"
       className={styles.mobileConfirm}
-      disabled={form.verifying}
+      disabled={!form.value.trim() || form.verifying}
       onMouseDown={(event) => event.preventDefault()}
       onClick={() => void form.submit()}
     >

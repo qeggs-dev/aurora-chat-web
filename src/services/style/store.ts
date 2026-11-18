@@ -240,6 +240,20 @@ const compareVersions = (left: string | undefined, right: string | undefined): n
  *
  * 返回本机内置包的 id（没有可用内置包时为 null）。
  */
+/** 记录完整性检查：资产必须全部是非空 Blob（备份恢复/异常写入可能留下空记录） */
+const storedPackLooksIntact = (pack: {
+  assets?: Record<string, Blob>
+  icon?: { light?: Blob; dark?: Blob }
+  cover?: { light?: Blob; dark?: Blob }
+}): boolean => {
+  const assets = Object.values(pack.assets ?? {})
+  if (assets.length === 0 || assets.some((blob) => !(blob instanceof Blob) || blob.size === 0)) {
+    return false
+  }
+  const extra = [pack.icon?.light, pack.icon?.dark, pack.cover?.light, pack.cover?.dark]
+  return extra.every((blob) => blob === undefined || (blob instanceof Blob && blob.size > 0))
+}
+
 const ensureBuiltinPack = async (): Promise<string | null> => {
   let parsed: ParsedStylePack
   try {
@@ -264,8 +278,13 @@ const ensureBuiltinPack = async (): Promise<string | null> => {
   if (existing && existing.builtin !== true) {
     return null
   }
-  // 已安装更高或同版本的内置记录时不重复写库（避免每次启动都刷新 IndexedDB）
-  if (existing && compareVersions(manifest.version, existing.builtinVersion) <= 0) {
+  // 已安装更高或同版本的内置记录时不重复写库（避免每次启动都刷新 IndexedDB）；
+  // 但记录损坏（备份恢复、异常写入导致资产为空）时继续往下重装，避免样式静默失效。
+  if (
+    existing &&
+    compareVersions(manifest.version, existing.builtinVersion) <= 0 &&
+    storedPackLooksIntact(existing)
+  ) {
     return manifest.id
   }
 

@@ -266,6 +266,13 @@
   }
 }
 
+.apiKeyHint {
+  padding: 8px 14px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-caption);
+}
+
 .divider {
   flex-shrink: 0;
   width: 1px;

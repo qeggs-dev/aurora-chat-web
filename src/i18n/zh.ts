@@ -134,6 +134,7 @@ export const zh = {
   apiKeyEdit: '修改 API Key',
   apiKeyPlaceholder: '请输入 API Key',
   apiKeyVerifying: '正在验证...',
+  apiKeySaveHint: '按回车、点「确定」，或点击输入框外即可保存；保存前会先用 /models 校验。',
   confirm: '确定',
   apiKeyInvalid: 'API Key 无效，请检查后重试',
   apiKeyVerificationFailed: '校验失败：{message}',

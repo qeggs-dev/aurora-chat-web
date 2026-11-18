@@ -141,6 +141,7 @@ export const en = {
   apiKeyEdit: 'Edit API Key',
   apiKeyPlaceholder: 'Enter API Key',
   apiKeyVerifying: 'Verifying...',
+  apiKeySaveHint: 'Press Enter, click Confirm, or click outside the field to save; the key is verified with /models first.',
   confirm: 'Confirm',
   apiKeyInvalid: 'Invalid API Key. Please check it and try again.',
   apiKeyVerificationFailed: 'Verification failed: {message}',
