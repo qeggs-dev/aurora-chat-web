@@ -9,7 +9,7 @@ automatic context compaction, and a style-pack system (backgrounds, icons, fonts
 
 Aurora Chat is **not** an official DeepSeek product and is not affiliated with or endorsed by DeepSeek.
 Names, interface and trademarks belong to their respective owners. The upstream project is licensed
-under the MIT license; see [`LICENSE`](./LICENSE) and the repository root `LICENSE-UPSTREAM`.
+under the MIT license; the upstream text is preserved in [`LICENSE-UPSTREAM`](./LICENSE-UPSTREAM) while [`LICENSE`](./LICENSE) holds this project's MIT license.
 
 ## Project layout
 
@@ -31,7 +31,7 @@ configured API endpoint (default DeepSeek Anthropic-compatible endpoint); no pro
 
 ## License
 
-- Upstream code: MIT, © DeepSeek — see [`LICENSE`](./LICENSE).
-- Modifications in this fork: MIT, © Aurora Chat contributors.
+- This project: MIT, © Qeggs and Aurora Chat contributors — see [`LICENSE`](./LICENSE).
+- Upstream code: MIT, © DeepSeek — preserved in [`LICENSE-UPSTREAM`](./LICENSE-UPSTREAM).
 
 Upstream online demo (for comparison only): <https://deepseek-ai.github.io/chat-demo/>

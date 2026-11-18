@@ -31,7 +31,7 @@ pnpm build      # 生产构建输出到 dist/
 
 ## 许可
 
-- 上游代码：MIT，© DeepSeek —— 见 [`LICENSE`](./LICENSE)
-- 本 fork 的修改：MIT，© Aurora Chat contributors
+- 本项目：MIT，© Qeggs 与 Aurora Chat contributors —— 见 [`LICENSE`](./LICENSE)
+- 上游代码：MIT，© DeepSeek —— 原文保存在 [`LICENSE-UPSTREAM`](./LICENSE-UPSTREAM)
 
 上游官方在线 demo（仅供对照）：<https://deepseek-ai.github.io/chat-demo/>

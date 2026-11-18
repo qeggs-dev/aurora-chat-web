@@ -304,6 +304,61 @@ export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promis
   }
 }
 
+/** 从 /models 响应里提取模型 id（兼容 OpenAI { data: [{ id }] } 与 Anthropic { data: [{ id }] }） */
+const parseModelIds = (payload: unknown): string[] => {
+  if (!payload || typeof payload !== 'object') {
+    return []
+  }
+  const record = payload as Record<string, unknown>
+  const list = Array.isArray(record.data)
+    ? record.data
+    : Array.isArray(record.models)
+      ? record.models
+      : []
+  const ids: string[] = []
+  for (const item of list) {
+    if (typeof item === 'string') {
+      ids.push(item)
+      continue
+    }
+    if (item && typeof item === 'object') {
+      const id = (item as { id?: unknown }).id
+      const name = (item as { name?: unknown }).name
+      if (typeof id === 'string') {
+        ids.push(id)
+      } else if (typeof name === 'string') {
+        ids.push(name)
+      }
+    }
+  }
+  return [...new Set(ids)]
+}
+
+/**
+ * 按当前预设的协议与端点获取模型列表（GET /models，不产生费用）。
+ * - 未启用预设 / DeepSeek 的 Anthropic 兼容端点：走默认端点的 /models（Bearer）
+ * - Anthropic 协议：{base_url}/models，携带 x-api-key 与 anthropic-version
+ * - OpenAI / Responses 协议：{base_url}/models，Bearer
+ */
+export const listModels = async (apiKey: string, signal?: AbortSignal): Promise<string[]> => {
+  const preset = getActiveResolvedPreset()
+  const read = async (url: string, headers: Record<string, string>) => {
+    const response = await request(url, { method: 'GET', headers, signal })
+    return parseModelIds(await response.json())
+  }
+  if (!preset || isAnthropicDeepseekPreset(preset)) {
+    return read(`${API_ORIGIN}/models`, { Authorization: `Bearer ${apiKey}` })
+  }
+  const base = preset.base_url.replace(/\/+$/, '')
+  if (preset.protocol === 'anthropic') {
+    return read(`${base}/models`, {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    })
+  }
+  return read(`${base}/models`, { Authorization: `Bearer ${apiKey}` })
+}
+
 let skippedFileSequence = 0
 
 /**

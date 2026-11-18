@@ -639,3 +639,16 @@
     min-height: 40px;
   }
 }
+
+
+/* 模型输入框 + 「获取模型列表」按钮 */
+.fieldRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.fieldRow .input {
+  flex: 1;
+  min-width: 0;
+}

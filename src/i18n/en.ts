@@ -21,12 +21,13 @@ export const en = {
   aboutDisclaimer:
     'Aurora Chat is a community-maintained client: its interface and parts of the code come from the open-source chat-demo project, with substantial modifications and additions (style packs, API presets, usage stats, memory). It is not a DeepSeek product and is not affiliated with or endorsed by DeepSeek. Names, interface and trademarks belong to their respective owners.',
   aboutUpstreamLabel: 'Upstream project',
-  aboutOfficialDemoLabel: 'Official live demo',
+  aboutOfficialDemoLabel: 'Upstream official demo (not this project)',
   aboutMaintainerLabel: 'Maintainer',
   aboutMaintainerNote: 'Aurora Chat is maintained by Qeggs; issues and suggestions are welcome on GitHub.',
   aboutOfficialDemoNote:
-    'The official online build of chat-demo, for comparison only. This project is a community client and is unrelated to it.',
+    'The official online build of the upstream chat-demo project (external link), for comparison only. It is not a page of this project; this project is a community client and is unrelated to it.',
   aboutLicenseLabel: 'Open-source license (MIT)',
+  aboutUpstreamLicenseLabel: 'Upstream license (LICENSE-UPSTREAM)',
   aboutIconsLabel: 'Icon',
   aboutIconsText:
     'The app icon and splash use an original abstract aurora mark: cyan-to-violet aurora ribbons on a deep blue field, with no lettering or official elements.',
@@ -44,7 +45,7 @@ export const en = {
   disclaimerGatePointLicense:
     'Upstream code is released under the MIT license; names, marks and trademarks belong to their respective owners.',
   disclaimerGateUpstreamLabel: 'Upstream project: ',
-  disclaimerGateOfficialDemoLabel: 'Official live demo: ',
+  disclaimerGateOfficialDemoLabel: 'Upstream official demo (not this project): ',
   disclaimerGateAfter:
     'By continuing you confirm that you have read and understood the notice above. You can revisit it any time under Settings -> About.',
   disclaimerGateAccept: 'I understand, continue',
@@ -326,6 +327,12 @@ export const en = {
   presetSubtabCompaction: 'Context compaction',
   presetFieldProtocol: 'Protocol',
   presetFieldBaseUrl: 'Base URL',
+  presetModelListFetch: 'Fetch models',
+  presetModelListFetching: 'Fetching…',
+  presetModelListSelect: 'Choose a model',
+  presetModelListEmpty: 'The endpoint returned no models; you can still type a model name.',
+  presetModelListError: 'Failed to fetch models: ',
+  presetModelListNoKey: 'Set an API key in General settings before fetching models.',
   presetFieldModel: 'Model',
   presetFieldTemperature: 'temperature (0–2)',
   presetFieldTopP: 'top_p (0–1)',

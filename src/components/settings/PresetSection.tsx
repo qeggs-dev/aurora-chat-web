@@ -57,6 +57,8 @@ import { STYLE_SLOTS } from '../../services/style/types.js'
 import { Modal } from '../base/Modal.js'
 import { Select, type SelectOption } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
+import { listModels } from '../../services/api/client.js'
+import { useSettings } from '../../services/settings.js'
 import settingsStyles from './Settings.module.css'
 import styles from './PresetSection.module.css'
 
@@ -1382,6 +1384,31 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
   const { config, builtin } = draft
   const baseUrlError = api.errors.base_url
   const modelError = api.errors.model
+  const apiKey = useSettings((state) => state.apiKey)
+  const [models, setModels] = useState<string[]>([])
+  const [modelListState, setModelListState] = useState<'idle' | 'loading' | 'error' | 'empty'>(
+    'idle'
+  )
+  const [modelListError, setModelListError] = useState('')
+  const modelListId = `${id}-model-options`
+
+  const loadModelList = async () => {
+    if (!apiKey) {
+      setModelListState('error')
+      setModelListError(t('presetModelListNoKey'))
+      return
+    }
+    setModelListState('loading')
+    setModelListError('')
+    try {
+      const list = await listModels(apiKey)
+      setModels(list)
+      setModelListState(list.length === 0 ? 'empty' : 'idle')
+    } catch (error) {
+      setModelListState('error')
+      setModelListError(error instanceof Error ? error.message : String(error))
+    }
+  }
   const protocolOptions: SelectOption<string>[] = builtin
     ? [{ value: '', label: t('presetUseSystemDefault') }, ...PROTOCOL_OPTIONS]
     : PROTOCOL_OPTIONS
@@ -1427,17 +1454,53 @@ const ApiPanel = ({ draft, api }: PanelProps) => {
         htmlFor={`${id}-model`}
         error={modelError ? t(modelError.key, modelError.params) : undefined}
       >
-        <input
-          id={`${id}-model`}
-          className={clsx(styles.input, modelError && styles.inputInvalid)}
-          spellCheck={false}
-          value={config.model ?? ''}
-          placeholder={builtin ? t('presetUseSystemDefault') : undefined}
-          aria-invalid={modelError ? true : undefined}
-          onChange={(event) =>
-            api.setConfig((current) => ({ ...current, model: event.target.value }))
-          }
-        />
+        <div className={styles.fieldRow}>
+          <input
+            id={`${id}-model`}
+            className={clsx(styles.input, modelError && styles.inputInvalid)}
+            spellCheck={false}
+            list={modelListId}
+            value={config.model ?? ''}
+            placeholder={builtin ? t('presetUseSystemDefault') : undefined}
+            aria-invalid={modelError ? true : undefined}
+            onChange={(event) =>
+              api.setConfig((current) => ({ ...current, model: event.target.value }))
+            }
+          />
+          <Button
+            variant="outlined"
+            size="s"
+            disabled={modelListState === 'loading'}
+            onClick={loadModelList}
+          >
+            {modelListState === 'loading'
+              ? t('presetModelListFetching')
+              : t('presetModelListFetch')}
+          </Button>
+        </div>
+        <datalist id={modelListId}>
+          {models.map((model) => (
+            <option key={model} value={model} />
+          ))}
+        </datalist>
+        {models.length > 0 ? (
+          <Select
+            ariaLabel={t('presetModelListSelect')}
+            className={styles.select}
+            value={config.model ?? ''}
+            placeholder={t('presetModelListSelect')}
+            options={models.map((model) => ({ value: model, label: model }))}
+            onChange={(model) => api.setConfig((current) => ({ ...current, model }))}
+          />
+        ) : null}
+        {modelListState === 'error' ? (
+          <div className={styles.note}>
+            {t('presetModelListError')} {modelListError}
+          </div>
+        ) : null}
+        {modelListState === 'empty' ? (
+          <div className={styles.note}>{t('presetModelListEmpty')}</div>
+        ) : null}
       </Field>
       <div className={styles.note}>{t('presetApiKeyNote')}</div>
     </div>

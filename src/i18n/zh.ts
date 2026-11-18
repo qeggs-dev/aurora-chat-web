@@ -18,12 +18,13 @@ export const zh = {
   aboutDisclaimer:
     'Aurora Chat 是社区维护的客户端：界面与部分代码基于开源项目 chat-demo，并在此基础上做了大量修改与扩展（样式包、API 预设、用量统计、记忆等）。它不是 DeepSeek 官方产品，也未获得 DeepSeek 的授权或背书。名称、界面与商标归各自权利人所有。',
   aboutUpstreamLabel: '上游项目',
-  aboutOfficialDemoLabel: '官方在线体验',
+  aboutOfficialDemoLabel: '上游官方 demo（非本项目）',
   aboutMaintainerLabel: '维护者',
   aboutMaintainerNote: 'Aurora Chat 由 Qeggs 维护，问题与建议欢迎在 GitHub 上反馈。',
   aboutOfficialDemoNote:
-    '上游官方 demo（chat-demo 的在线版本），仅供对照；本项目是社区客户端，与它无关。',
+    'chat-demo 上游项目的官方在线版本（外部链接），仅供对照；它不是本项目的页面，本项目是社区客户端，与其无关。',
   aboutLicenseLabel: '开源许可（MIT）',
+  aboutUpstreamLicenseLabel: '上游项目许可（LICENSE-UPSTREAM）',
   aboutIconsLabel: '图标',
   aboutIconsText:
     '应用图标与启动屏为本项目自绘的抽象极光标记：深蓝底上青蓝到紫的极光弧带，不含任何字母或官方元素。',
@@ -39,7 +40,7 @@ export const zh = {
     '界面与功能来自 chat-demo 项目的公开代码，本项目在其基础上做了大量修改与扩展。',
   disclaimerGatePointLicense: '上游代码以 MIT 许可发布；名称、标识与商标归各自权利人所有。',
   disclaimerGateUpstreamLabel: '上游项目：',
-  disclaimerGateOfficialDemoLabel: '官方在线体验：',
+  disclaimerGateOfficialDemoLabel: '上游官方 demo（非本项目）：',
   disclaimerGateAfter:
     '点击下方按钮表示你已阅读并知悉以上内容。之后可在「设置 → 关于」随时查看完整声明与许可。',
   disclaimerGateAccept: '我已知悉，继续使用',
@@ -308,6 +309,12 @@ export const zh = {
   presetSubtabCompaction: '上下文压缩',
   presetFieldProtocol: '协议',
   presetFieldBaseUrl: 'Base URL',
+  presetModelListFetch: '获取模型列表',
+  presetModelListFetching: '获取中…',
+  presetModelListSelect: '从列表中选择模型',
+  presetModelListEmpty: '接口没有返回模型列表，可直接手动输入模型名。',
+  presetModelListError: '获取模型列表失败：',
+  presetModelListNoKey: '请先在「通用设置」里填写 API Key，再获取模型列表。',
   presetFieldModel: '模型',
   presetFieldTemperature: 'temperature（0–2）',
   presetFieldTopP: 'top_p（0–1）',
