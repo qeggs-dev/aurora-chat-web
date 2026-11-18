@@ -470,6 +470,11 @@ export type StylePackSummary = {
   importedAt: number
   /** 随安装包分发的内置样式包：首次启动自动安装、不可删除、「恢复默认」回到它 */
   builtin?: boolean
+  /**
+   * 记录不完整（assets 缺失 / 零字节 Blob，来自备份恢复或异常写入）：
+   * 列表标记「损坏」并提示重新导入，激活 / 恢复时跳过该记录。
+   */
+  broken?: boolean
   /** 详情页的完整清单（资源槽位 / 参数 / 调色板 / sidebarTitle） */
   manifest: StyleManifest
   /** 许可证全文；文件缺失或不安全时为 undefined */

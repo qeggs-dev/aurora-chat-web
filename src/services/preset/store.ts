@@ -21,6 +21,7 @@ import {
   type ResolvedPreset,
 } from './types.js'
 import { parsePresetConfigForSave, parsePresetZip } from './zip.js'
+import { importOverwriteCheck, saveNeedsStaleConfirm } from './overwrite.js'
 
 export type PresetState = {
   ready: boolean
@@ -32,6 +33,28 @@ export type PresetState = {
   /** 最近一次导入 / 保存失败的错误码（PresetErrorCode，未知错误为 importFailed / saveFailed） */
   error: string | null
 }
+
+/** 导入 / 保存的可选覆盖行为：需要覆盖同 id 的用户自建预设 / 过期草稿时由 UI 二次确认后传入 */
+export type PresetWriteOptions = {
+  /** 用户已确认覆盖同 id 的用户自建预设 */
+  overwrite?: boolean
+  /** 草稿加载时对应记录的 importedAt；与当前记录不一致时视为过期草稿 */
+  expectedImportedAt?: number
+}
+
+export type PresetImportOutcome = {
+  id: string
+  name: string
+  /** 'userPreset'：同 id 的用户自建预设需要确认覆盖；此时没有写入任何数据 */
+  conflict: 'userPreset' | null
+  /** 是否覆盖了已有记录（只有真正写入时才为 true） */
+  overwritten: boolean
+}
+
+export type PresetSaveOutcome =
+  | { ok: true; importedAt: number; overwritten: boolean }
+  /** 草稿已过期（记录被重新导入 / 其它保存更新）：需要 UI 确认后再用 overwrite 重试 */
+  | { ok: false; conflict: 'staleDraft' }
 
 /** 内置默认预设的展示名（记录里也用它初始化；用户改名后以存储值为准） */
 export const DEFAULT_PRESET_NAME = '默认配置'
@@ -199,9 +222,14 @@ const ensureDefaultPreset = async (): Promise<void> => {
 
 /**
  * 导入 preset zip；同 id 覆盖，当前没有启用项时自动启用。
+ * 覆盖同 id 的**用户自建预设**前先返回 `conflict: 'userPreset'` 而不写入，
+ * UI 确认后带 `overwrite: true` 重试；已导入预设的同 id 更新直接覆盖。
  * 返回导入预设的 id / 名称，UI 用它提示「已导入但未启用」并切到该预设。
  */
-export const importPresetZip = async (file: File): Promise<{ id: string; name: string }> => {
+export const importPresetZip = async (
+  file: File,
+  options: PresetWriteOptions = {}
+): Promise<PresetImportOutcome> => {
   set({ importing: true, error: null })
   try {
     const parsed = await parsePresetZip(file)
@@ -210,8 +238,19 @@ export const importPresetZip = async (file: File): Promise<{ id: string; name: s
       throw new PresetError('reservedId', parsed.config.id)
     }
     const previous = await getStoredPreset(parsed.config.id)
-    if (previous?.builtin) {
+    const check = importOverwriteCheck(previous)
+    if (check === 'blocked') {
       throw new PresetError('reservedId', parsed.config.id)
+    }
+    if (check === 'confirm' && options.overwrite !== true) {
+      // 让 UI 先确认是否覆盖同 id 的用户自建预设，此时不写库、不报错
+      set({ importing: false })
+      return {
+        id: parsed.config.id,
+        name: parsed.config.name,
+        conflict: 'userPreset',
+        overwritten: false,
+      }
     }
     await putStoredPreset({
       id: parsed.config.id,
@@ -228,7 +267,12 @@ export const importPresetZip = async (file: File): Promise<{ id: string; name: s
       await activatePreset(parsed.config.id)
     }
     set({ importing: false })
-    return { id: parsed.config.id, name: parsed.config.name }
+    return {
+      id: parsed.config.id,
+      name: parsed.config.name,
+      conflict: null,
+      overwritten: previous !== undefined,
+    }
   } catch (error) {
     set({ importing: false, error: errorCode(error, 'importFailed') })
     throw error
@@ -240,8 +284,14 @@ export const importPresetZip = async (file: File): Promise<{ id: string; name: s
  * 内置默认预设走独立的部分字段解析：允许只含 schema / id / name，留空字段表示使用系统默认。
  * icon / license / system_prompt_file 的内容只能来自 zip：编辑已有预设时沿用旧记录里的文件，
  * 引用一个本机没有内容的文件按 missingFile 失败。
+ *
+ * 过期草稿保护：草稿加载后同 id 记录被重新导入 / 保存过（importedAt 改变）时返回
+ * `{ ok: false, conflict: 'staleDraft' }` 而不写入；UI 确认后用 `overwrite: true` 重试。
  */
-export const savePresetJson = async (text: string): Promise<void> => {
+export const savePresetJson = async (
+  text: string,
+  options: PresetWriteOptions = {}
+): Promise<PresetSaveOutcome> => {
   set({ importing: true, error: null })
   try {
     const config = parsePresetConfigForSave(text)
@@ -252,6 +302,14 @@ export const savePresetJson = async (text: string): Promise<void> => {
     // 内置演示包的配置可以被编辑，但普通预设不能占用它的 id
     if (previous?.builtin && !isDefault) {
       throw new PresetError('reservedId', config.id)
+    }
+    // 旧草稿不能把后来导入 / 保存的内容盖回去：先让 UI 确认
+    if (
+      options.overwrite !== true &&
+      saveNeedsStaleConfirm(options.expectedImportedAt, previous?.importedAt)
+    ) {
+      set({ importing: false })
+      return { ok: false, conflict: 'staleDraft' }
     }
     const icon = config.icon ? previous?.icon : undefined
     const license = config.license ? previous?.license : undefined
@@ -270,13 +328,14 @@ export const savePresetJson = async (text: string): Promise<void> => {
     }
     const storedConfig: PresetConfig =
       isDefault || previous?.builtin === true ? { ...config, builtin: true } : config
+    const importedAt = isDefault ? (previous?.importedAt ?? Date.now()) : Date.now()
     await putStoredPreset({
       id: storedConfig.id,
       config: storedConfig,
       icon,
       license,
       promptText,
-      importedAt: isDefault ? (previous?.importedAt ?? Date.now()) : Date.now(),
+      importedAt,
       ...(previous?.builtin === true || isDefault ? { builtin: true } : {}),
       // 新建 / 编辑保存的预设都是可编辑的；内置预设不记来源（内置语义优先）
       ...(isDefault || previous?.builtin === true ? {} : { source: 'created' as const }),
@@ -286,6 +345,7 @@ export const savePresetJson = async (text: string): Promise<void> => {
       await activatePreset(config.id)
     }
     set({ importing: false })
+    return { ok: true, importedAt, overwritten: previous !== undefined }
   } catch (error) {
     set({ importing: false, error: errorCode(error, 'saveFailed') })
     throw error
@@ -380,14 +440,33 @@ export const getActiveResolvedPreset = (): ResolvedPreset | null => {
   return isSystemDefaultPreset(active) ? null : resolvePreset(active)
 }
 
-/** 读取某个预设的完整配置（供编辑器回填；启用项也可直接用 usePresetState().active） */
-export const loadPresetConfig = async (id: string): Promise<PresetConfig | null> => {
+/**
+ * 清除最近一次导入 / 保存的失败错误。设置页关闭或重新打开时调用，
+ * 避免上次失败的提示在组件重挂载后继续显示。
+ */
+export const clearPresetError = (): void => {
+  if (get().error !== null) {
+    set({ error: null })
+  }
+}
+
+/** 编辑器回填用的完整记录：配置（提示词文件已合并）与 importedAt（过期草稿保护） */
+export type LoadedPresetEntry = { config: PresetConfig; importedAt: number }
+
+/** 读取某个预设的完整记录（供编辑器回填；启用项也可直接用 usePresetState().active） */
+export const loadPresetEntry = async (id: string): Promise<LoadedPresetEntry | null> => {
   const stored = await getStoredPreset(id)
   if (!stored) {
     return null
   }
   // zip 里的提示词文件在导入时已经读成 promptText，编辑器回填时要合并进 config
-  return stored.promptText !== undefined
-    ? { ...stored.config, system_prompt: stored.promptText }
-    : stored.config
+  const config =
+    stored.promptText !== undefined
+      ? { ...stored.config, system_prompt: stored.promptText }
+      : stored.config
+  return { config, importedAt: stored.importedAt }
 }
+
+/** 读取某个预设的完整配置（兼容旧调用方） */
+export const loadPresetConfig = async (id: string): Promise<PresetConfig | null> =>
+  (await loadPresetEntry(id))?.config ?? null

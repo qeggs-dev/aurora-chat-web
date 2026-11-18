@@ -123,10 +123,10 @@ test('effectCss：阴影走 drop-shadow，透明度走 opacity，默认值不产
   })
 })
 
-test('effectsHash：undefined 固定为 none，键顺序无关，值 / 数组顺序相关', () => {
+test('effectsHash：undefined 与空对象同为 none，键顺序无关，值 / 数组顺序相关', () => {
   assert.equal(effects.effectsHash(undefined), 'none')
-  // 空对象仍参与哈希（与 undefined 区分）
-  assert.notEqual(effects.effectsHash({}), 'none')
+  // 空对象等价于没有特效：与 undefined 同键，避免净化后的 {} 重复派生
+  assert.equal(effects.effectsHash({}), 'none')
   const a = { opacity: 0.5, shadow: { x: 1, y: 2 } }
   const b = { shadow: { y: 2, x: 1 }, opacity: 0.5 }
   assert.equal(effects.effectsHash(a), effects.effectsHash(b))

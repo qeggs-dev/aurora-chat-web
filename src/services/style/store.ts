@@ -4,8 +4,10 @@ import builtinPackUrl from '../../assets/builtin/aurora.zip'
 import { useSyncExternalStore } from 'react'
 import { create } from 'zustand'
 import { useSettings, type ThemePreference } from '../settings.js'
+import { createActivationGate, createDeferredReapply } from './activation.js'
 import { applyStyleVars, type ActiveStyle } from './apply.js'
 import { createEffectsImageUrl, needsCanvasProcessing, pruneEffectsCache } from './effects.js'
+import { resolveInitialStylePackId, storedPackLooksIntact } from './integrity.js'
 import {
   deleteStoredStylePack,
   getStoredStylePack,
@@ -162,7 +164,8 @@ const refreshPacks = async (): Promise<void> => {
     if (coverUrls) {
       nextCovers.set(pack.id, coverUrls)
     }
-    return summarize(pack, { iconUrls, coverUrls })
+    // 资产为空 / 零字节的记录在列表里标记「损坏」，UI 提示重新导入并禁止启用
+    return { ...summarize(pack, { iconUrls, coverUrls }), broken: !storedPackLooksIntact(pack) }
   })
   const previous = summaryUrls
   summaryUrls = { icons: nextIcons, covers: nextCovers }
@@ -236,24 +239,11 @@ const compareVersions = (left: string | undefined, right: string | undefined): n
  * - 本机没有该 id（aurora）→ 写入并标记 `builtin: true` + `builtinVersion`；
  * - 已有 builtin 记录且安装包内资产版本更新 → 覆盖内容并刷新 `builtinVersion`；
  * - 已有用户自己导入的同 id 包（builtin=false）→ 保留用户包，不覆盖；
- * - 内置资产 fetch / 解析失败 → 只 warn 一次并返回 null，不阻塞启动。
+ * - 内置资产 fetch / 解析失败 → 只 warn 一次；本机已有完整的内置记录时复用它，
+ *   绝不把已知损坏的记录当成可用内置包返回。
  *
  * 返回本机内置包的 id（没有可用内置包时为 null）。
  */
-/** 记录完整性检查：资产必须全部是非空 Blob（备份恢复/异常写入可能留下空记录） */
-const storedPackLooksIntact = (pack: {
-  assets?: Record<string, Blob>
-  icon?: { light?: Blob; dark?: Blob }
-  cover?: { light?: Blob; dark?: Blob }
-}): boolean => {
-  const assets = Object.values(pack.assets ?? {})
-  if (assets.length === 0 || assets.some((blob) => !(blob instanceof Blob) || blob.size === 0)) {
-    return false
-  }
-  const extra = [pack.icon?.light, pack.icon?.dark, pack.cover?.light, pack.cover?.dark]
-  return extra.every((blob) => blob === undefined || (blob instanceof Blob && blob.size > 0))
-}
-
 const ensureBuiltinPack = async (): Promise<string | null> => {
   let parsed: ParsedStylePack
   try {
@@ -267,9 +257,11 @@ const ensureBuiltinPack = async (): Promise<string | null> => {
     )
   } catch (error) {
     warnBuiltinOnce(
-      `内置样式包不可用（${error instanceof Error ? error.message : String(error)}），已回退应用默认外观`
+      `内置样式包不可用（${error instanceof Error ? error.message : String(error)}），将复用本机完整的内置记录或回退应用默认外观`
     )
-    return null
+    // fetch / 解析失败时只复用本机已有的完整内置记录；损坏记录不能拿来启用。
+    const stored = await listStoredStylePacks().catch(() => [])
+    return stored.find((pack) => pack.builtin === true && storedPackLooksIntact(pack))?.id ?? null
   }
 
   const { manifest } = parsed
@@ -307,90 +299,132 @@ const ensureBuiltinPack = async (): Promise<string | null> => {
   return manifest.id
 }
 
-/** 递增序号：并发的启用请求只有最后一次生效 */
-let activationSequence = 0
+/** 激活时序闸门：快速连点切换样式包时只让最后一次落地（含其后的主题重应用） */
+const activationGate = createActivationGate()
+
+/** 主题变化：激活进行中先记下，收尾后按最新 active + 当前主题补一次 */
+const themeReapply = createDeferredReapply(
+  () => activationGate.isPending(),
+  () => {
+    void applyStyleVars(get().active, resolveTheme())
+  }
+)
+
+/** 损坏记录只 warn 一次，避免列表 / 启动时反复刷屏 */
+const warnedBrokenPacks = new Set<string>()
+const warnBrokenPackOnce = (id: string): void => {
+  if (warnedBrokenPacks.has(id)) {
+    return
+  }
+  warnedBrokenPacks.add(id)
+  // oxlint-disable-next-line no-console
+  console.warn(`[style-pack] 样式包记录不完整（assets 缺失或为空），已跳过启用：${id}`)
+}
 
 /**
  * 启用指定样式包；传入的 id 取不到记录时清除全部样式变量、回到上游默认外观。
+ * 记录损坏（assets 缺失 / 零字节）时不应用：保留当前外观并提示重新导入。
  *
  * `activateStylePack(null)` 是**内部兜底**：只在内置包不可用（资产缺失 / 解析失败 /
  * 被用户同 id 包覆盖）或初始化异常时走到。正常构建与安装下，启动、删除非内置包、
  * 「恢复默认」都指向内置极光包，UI 不提供「停用样式包 / 回到上游外观」的入口。
  */
 export const activateStylePack = async (id: string | null): Promise<void> => {
-  const sequence = ++activationSequence
-  const pack = id ? await getStoredStylePack(id) : undefined
-  if (sequence !== activationSequence) {
-    return
-  }
-
-  // 释放旧 URL 放到新 URL 应用之后：否则主题切换/二次激活时，
-  // 变量可能短暂指向已经 revoke 的地址，图片会静默变成空白。
-  if (!pack) {
-    const previous = activeUrls
-    activeUrls = []
-    set({ activeId: null, active: null })
-    writeActiveId(null)
-    pruneEffects([])
-    await applyStyleVars(null, resolveTheme())
-    for (const url of previous) {
-      URL.revokeObjectURL(url)
+  const token = activationGate.begin()
+  try {
+    const pack = id ? await getStoredStylePack(id) : undefined
+    if (!activationGate.isCurrent(token)) {
+      return
     }
-    return
-  }
-
-  const urls: Record<string, string> = {}
-  const created: string[] = []
-  for (const [assetId, blob] of Object.entries(pack.assets)) {
-    const url = URL.createObjectURL(blob)
-    urls[assetId] = url
-    created.push(url)
-  }
-  // 背景的 window / zoom 需要 canvas 派生图；静态特效与 tilt 在导入时已从背景清单里移除
-  for (const [assetId, url] of Object.entries(urls)) {
-    const asset = pack.manifest.assets[assetId]
-    const effects = asset?.effects
-    if (
-      !assetId.startsWith(`${STYLE_PREFIX}.background.`) ||
-      !effects ||
-      !needsCanvasProcessing(effects)
-    ) {
-      continue
+    if (pack && !storedPackLooksIntact(pack)) {
+      warnBrokenPackOnce(pack.id)
+      set({ error: 'brokenPack' })
+      return
     }
-    const derivedUrl = await createEffectsImageUrl(url, effects)
-    if (sequence !== activationSequence) {
-      for (const createdUrl of created) {
-        URL.revokeObjectURL(createdUrl)
+
+    // 释放旧 URL 放到新 URL 应用之后：否则主题切换/二次激活时，
+    // 变量可能短暂指向已经 revoke 的地址，图片会静默变成空白。
+    if (!pack) {
+      if (!activationGate.isCurrent(token)) {
+        return
       }
-      if (derivedUrl) {
-        URL.revokeObjectURL(derivedUrl)
+      const previous = activeUrls
+      activeUrls = []
+      set({ activeId: null, active: null, error: null })
+      writeActiveId(null)
+      pruneEffects([])
+      await applyStyleVars(null, resolveTheme())
+      for (const url of previous) {
+        URL.revokeObjectURL(url)
       }
       return
     }
-    if (derivedUrl) {
-      urls[assetId] = derivedUrl
-      created.push(derivedUrl)
-    }
-  }
-  const iconUrls = createThemeUrls(pack.icon, created)
-  const coverUrls = createThemeUrls(pack.cover, created)
 
-  const previous = activeUrls
-  activeUrls = created
-  const active: ActiveStyle = {
-    id: pack.id,
-    manifest: pack.manifest,
-    urls,
-    iconUrls,
-    coverUrls,
-    license: pack.license,
-  }
-  set({ activeId: pack.id, active })
-  writeActiveId(pack.id)
-  pruneEffects(created)
-  await applyStyleVars(active, resolveTheme())
-  for (const url of previous) {
-    URL.revokeObjectURL(url)
+    const urls: Record<string, string> = {}
+    const created: string[] = []
+    for (const [assetId, blob] of Object.entries(pack.assets)) {
+      const url = URL.createObjectURL(blob)
+      urls[assetId] = url
+      created.push(url)
+    }
+    // 背景的 window / zoom 需要 canvas 派生图；静态特效与 tilt 在导入时已从背景清单里移除
+    for (const [assetId, url] of Object.entries(urls)) {
+      const asset = pack.manifest.assets[assetId]
+      const effects = asset?.effects
+      if (
+        !assetId.startsWith(`${STYLE_PREFIX}.background.`) ||
+        !effects ||
+        !needsCanvasProcessing(effects)
+      ) {
+        continue
+      }
+      const derivedUrl = await createEffectsImageUrl(url, effects)
+      if (!activationGate.isCurrent(token)) {
+        for (const createdUrl of created) {
+          URL.revokeObjectURL(createdUrl)
+        }
+        if (derivedUrl) {
+          URL.revokeObjectURL(derivedUrl)
+        }
+        return
+      }
+      if (derivedUrl) {
+        urls[assetId] = derivedUrl
+        created.push(derivedUrl)
+      }
+    }
+    const iconUrls = createThemeUrls(pack.icon, created)
+    const coverUrls = createThemeUrls(pack.cover, created)
+
+    // 应用变量前再确认一次没有被更新的激活取代：旧激活不能写入旧包变量，
+    // 也不能把 activeUrls 换成自己（那样会丢掉当前生效包的 URL 引用）。
+    if (!activationGate.isCurrent(token)) {
+      for (const createdUrl of created) {
+        URL.revokeObjectURL(createdUrl)
+      }
+      return
+    }
+    const previous = activeUrls
+    activeUrls = created
+    const active: ActiveStyle = {
+      id: pack.id,
+      manifest: pack.manifest,
+      urls,
+      iconUrls,
+      coverUrls,
+      license: pack.license,
+    }
+    set({ activeId: pack.id, active, error: null })
+    writeActiveId(pack.id)
+    pruneEffects(created)
+    await applyStyleVars(active, resolveTheme())
+    for (const url of previous) {
+      URL.revokeObjectURL(url)
+    }
+  } finally {
+    activationGate.end()
+    // 激活期间发生的主题切换：等最后一次激活收尾后按最新状态补应用一次
+    themeReapply.flush()
   }
 }
 
@@ -425,9 +459,9 @@ export const importStylePack = async (file: File): Promise<void> => {
   }
 }
 
-/** 当前列表里的内置样式包 id（没有内置包、只剩应用默认外观时为 null） */
+/** 当前列表里的内置样式包 id（没有内置包、或内置记录损坏时为 null） */
 export const getBuiltinStylePackId = (): string | null =>
-  get().packs.find((pack) => pack.builtin === true)?.id ?? null
+  get().packs.find((pack) => pack.builtin === true && pack.broken !== true)?.id ?? null
 
 /**
  * 「恢复默认（极光）」：启用随安装包分发的内置包。
@@ -458,7 +492,8 @@ export const removeStylePack = async (id: string): Promise<void> => {
 let themeBound = false
 
 const reapply = () => {
-  void applyStyleVars(get().active, resolveTheme())
+  // 激活进行中不要先用旧包的 active 应用一遍新主题：激活收尾会按当时的主题重新应用
+  themeReapply.request()
 }
 
 const bindTheme = () => {
@@ -485,15 +520,9 @@ export const initStylePacks = (): Promise<void> =>
       const builtinId = await ensureBuiltinPack()
       await refreshPacks()
       const saved = readActiveId()
-      if (saved && get().packs.some((pack) => pack.id === saved)) {
-        await activateStylePack(saved)
-      } else if (builtinId) {
-        // 没有启用记录（首次安装 / 记录已失效）时启用内置包
-        await activateStylePack(builtinId)
-      } else {
-        // 内置包也不可用时回退原有行为：应用默认外观
-        await activateStylePack(null)
-      }
+      // 恢复前校验完整性：saved 损坏时回退到完整的内置包，内置包也不可用才回到应用默认外观
+      const target = resolveInitialStylePackId(saved, get().packs, builtinId)
+      await activateStylePack(target)
     } catch {
       // 读取失败时保持空列表，不阻塞界面
     } finally {

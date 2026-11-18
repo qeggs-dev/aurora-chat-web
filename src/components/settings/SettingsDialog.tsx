@@ -1,5 +1,12 @@
 import clsx from 'clsx'
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import {
   IconDarkOutline16,
   IconDataOutline16,
@@ -39,6 +46,11 @@ import { STYLE_SLOTS } from '../../services/style/types.js'
 import { showToast } from '../base/toastState.js'
 import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import {
+  getDirtyPresetDraftsSnapshot,
+  resetPresetDrafts,
+  subscribePresetDrafts,
+} from './presetDraftStore.js'
 import { PresetIcon, PresetSection } from './PresetSection.js'
 import { StyleIcon, StyleSection } from './StyleSection.js'
 import { UsageIcon, UsageSection } from './UsageSection.js'
@@ -125,12 +137,65 @@ const SettingsContent = () => {
   const isMobile = useIsMobile()
   // 打开时按调用方指定的分组选中，之后在弹窗内切换
   const [section, setSection] = useState(() => useSettingsDialog.getState().section)
+  // 预设草稿在「预设」分组外仍然保留；离开分组 / 关闭弹窗时若有未保存修改先确认
+  const dirtyPresetDrafts = useSyncExternalStore(
+    subscribePresetDrafts,
+    getDirtyPresetDraftsSnapshot,
+    getDirtyPresetDraftsSnapshot
+  )
+  const [discardPrompt, setDiscardPrompt] = useState<
+    { kind: 'close' } | { kind: 'section'; section: SettingsSection } | null
+  >(null)
   // 切换分组不丢失正在输入的 API Key 与导入状态
   const apiKeyEditor = useApiKeyEditor()
   const historyImport = useHistoryImport()
   const historyDelete = useHistoryDelete()
   const replacingHistory = useChatStore((state) => state.importingHistory)
   const historyBusy = historyImport.busy || historyDelete.busy || replacingHistory
+
+  /** 真正关闭：丢弃预设草稿会话（未保存修改已确认或本来就没有） */
+  const closeNow = () => {
+    resetPresetDrafts()
+    closeSettings()
+  }
+
+  const requestClose = () => {
+    if (historyDelete.busy) {
+      return
+    }
+    if (dirtyPresetDrafts) {
+      setDiscardPrompt({ kind: 'close' })
+      return
+    }
+    closeNow()
+  }
+
+  const requestSection = (next: SettingsSection) => {
+    if (next === section) {
+      return
+    }
+    // 离开「预设」分组时才需要确认；其它分组之间切换不受影响
+    if (section === 'preset' && dirtyPresetDrafts) {
+      setDiscardPrompt({ kind: 'section', section: next })
+      return
+    }
+    setSection(next)
+  }
+
+  const confirmDiscard = () => {
+    const prompt = discardPrompt
+    if (!prompt) {
+      return
+    }
+    setDiscardPrompt(null)
+    resetPresetDrafts()
+    if (prompt.kind === 'close') {
+      closeSettings()
+    } else {
+      setSection(prompt.section)
+    }
+  }
+
   return (
     <>
       <Modal
@@ -139,11 +204,7 @@ const SettingsContent = () => {
         className={styles.dialog}
         mainClassName={styles.dialogMain}
         style={settingBackgrounds[section]}
-        onClose={() => {
-          if (!historyDelete.busy) {
-            closeSettings()
-          }
-        }}
+        onClose={requestClose}
       >
         <div role="tablist" className={styles.navigation}>
           {sections.map((item) => (
@@ -153,7 +214,7 @@ const SettingsContent = () => {
               role="tab"
               aria-selected={section === item.value}
               className={clsx(styles.navItem, section === item.value && styles.navItemActive)}
-              onClick={() => setSection(item.value)}
+              onClick={() => requestSection(item.value)}
             >
               {item.icon}
               {t(item.label)}
@@ -170,7 +231,7 @@ const SettingsContent = () => {
               <LocationSetting />
             </>
           ) : section === 'usage' ? (
-            <UsageSection onOpenData={() => setSection('data')} />
+            <UsageSection onOpenData={() => requestSection('data')} />
           ) : section === 'style' ? (
             <StyleSection />
           ) : section === 'preset' ? (
@@ -204,6 +265,29 @@ const SettingsContent = () => {
       </Modal>
       {historyImport.file ? <ImportConfirm historyImport={historyImport} /> : null}
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
+      {discardPrompt ? (
+        <Modal
+          title={t('presetUnsavedConfirmTitle')}
+          className={styles.deleteConfirm}
+          onClose={() => setDiscardPrompt(null)}
+          footer={
+            <div className={styles.deleteActions}>
+              <Button variant="outlined" autoFocus onClick={() => setDiscardPrompt(null)}>
+                {t('cancel')}
+              </Button>
+              <Button variant="danger" onClick={confirmDiscard}>
+                {t(
+                  discardPrompt.kind === 'close'
+                    ? 'presetUnsavedDiscardAndClose'
+                    : 'presetUnsavedDiscardAndSwitch'
+                )}
+              </Button>
+            </div>
+          }
+        >
+          {t('presetUnsavedConfirm')}
+        </Modal>
+      ) : null}
     </>
   )
 }

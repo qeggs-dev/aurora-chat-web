@@ -11,7 +11,6 @@ import {
 import {
   useTranslate,
   type TranslationKey,
-  type TranslationMessage,
   type TranslationParams,
 } from '../../i18n/index.js'
 import {
@@ -26,14 +25,32 @@ import {
 } from '../../services/memory/store.js'
 import {
   activatePreset,
+  clearPresetError,
   createPresetDraft,
   DEFAULT_PRESET_NAME,
   importPresetZip,
-  loadPresetConfig,
+  loadPresetEntry,
   removePreset,
   savePresetJson,
   usePresetState,
 } from '../../services/preset/store.js'
+import {
+  getPresetDrafts,
+  invalidatePresetDraft,
+  putPresetDraft,
+  removePresetDraft,
+  subscribePresetDrafts,
+  updatePresetDrafts,
+} from './presetDraftStore.js'
+import {
+  errorStatus,
+  infoStatus,
+  keepPersistentStatus,
+  presetErrorStatus,
+  storeErrorStatus,
+  type PresetStatus,
+} from './presetStatus.js'
+import type { Draft, NumericField, TextField, TextMap } from '../../services/preset/draft.js'
 import { PRESET_TEMPLATE_VARIABLES } from '../../services/preset/template.js'
 import {
   DEFAULT_PRESET_COMPACTION,
@@ -41,7 +58,6 @@ import {
   DEFAULT_PRESET_MEMORY,
   DEFAULT_PRESET_PARAMS,
   isBuiltinPreset,
-  PresetError,
   resolvePreset,
   type PresetConfig,
   type PresetProtocol,
@@ -80,38 +96,6 @@ export const PresetIcon = () => (
   </svg>
 )
 
-/** 每个 Preset 错误码对应的文案 key；未知错误退回带原始 message 的通用文案。 */
-const presetErrorKeys: Record<string, TranslationKey> = {
-  tooLarge: 'presetErrorTooLarge',
-  tooManyFiles: 'presetErrorTooManyFiles',
-  notZip: 'presetErrorNotZip',
-  noConfig: 'presetErrorNoConfig',
-  badConfig: 'presetErrorBadConfig',
-  badPath: 'presetErrorBadPath',
-  missingFile: 'presetErrorMissingFile',
-  badFileType: 'presetErrorBadFileType',
-  reservedId: 'presetErrorReservedId',
-  importedReadOnly: 'presetErrorImportedReadOnly',
-  missingDescription: 'presetErrorMissingDescription',
-  missingAuthor: 'presetErrorMissingAuthor',
-  missingVersion: 'presetErrorMissingVersion',
-  missingCopyright: 'presetErrorMissingCopyright',
-}
-
-/** 错误对象按当前语言展示：已知 PresetError 用错误码文案，其余带上原始 message。 */
-type Status = (TranslationMessage & { error?: boolean }) | null
-
-const errorText = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error)
-
-const presetErrorStatus = (error: unknown, fallback: TranslationKey): Status =>
-  error instanceof PresetError
-    ? {
-        key: Object.hasOwn(presetErrorKeys, error.code) ? presetErrorKeys[error.code] : fallback,
-        error: true,
-      }
-    : { key: fallback, params: { message: errorText(error) }, error: true }
-
 /** 元信息必填字段与展示名：保存被拒时在状态栏列出具体字段 */
 const METADATA_FIELD_LABELS: {
   field: 'description' | 'author' | 'version' | 'copyright'
@@ -127,31 +111,6 @@ const METADATA_FIELD_LABELS: {
  * 草稿模型：每个预设一份 draft（config + 数值输入的原文 + 未保存标记）。
  * 数值字段以输入原文为准，保存前统一按 preset/zip.ts 的规则做范围校验。
  * ----------------------------------------------------------------------------------------------- */
-
-type NumericField =
-  | 'temperature'
-  | 'top_p'
-  | 'max_tokens'
-  | 'presence_penalty'
-  | 'frequency_penalty'
-  | 'seed'
-  | 'trigger_tokens'
-  | 'keep_recent_messages'
-  | 'max_results'
-
-type TextField = NumericField | 'stop'
-
-type TextMap = Record<TextField, string>
-
-type Draft = {
-  config: PresetConfig
-  /** 数值字段的输入原文：保存时以它为准并做范围校验 */
-  text: TextMap
-  /** 与 store 里的配置不一致（新建预设初始为 true） */
-  dirty: boolean
-  /** 内置预设（默认预设 / 内置演示包）：字段留空 = 系统默认，不可删除 */
-  builtin: boolean
-}
 
 type FieldError = { key: TranslationKey; params?: TranslationParams }
 
@@ -445,11 +404,12 @@ const withSystemDefaults = (config: PresetConfig): PresetConfig => {
   }
 }
 
-const draftFromConfig = (config: PresetConfig, dirty: boolean): Draft => ({
+const draftFromConfig = (config: PresetConfig, dirty: boolean, importedAt?: number): Draft => ({
   config: withSystemDefaults(config),
   text: textFromConfig(withSystemDefaults(config)),
   dirty,
   builtin: isBuiltinPreset(config),
+  importedAt,
 })
 
 /** 从输入原文读一个可选数值：留空或非法时返回 undefined（内置预设留空 = 系统默认） */
@@ -856,9 +816,9 @@ const NumberField = ({
 export const PresetSection = () => {
   const t = useTranslate()
   const { ready, presets, activeId, active, importing, error } = usePresetState()
-  const [importStatus, setImportStatus] = useState<Status>(null)
-  const [saveStatus, setSaveStatus] = useState<Status>(null)
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({})
+  // 草稿放在模块级会话 store：切到其它设置分组（组件卸载）后仍保留，回来不会丢
+  const drafts = useSyncExternalStore(subscribePresetDrafts, getPresetDrafts, getPresetDrafts)
+  const [status, setStatus] = useState<PresetStatus | null>(null)
   const [extraIds, setExtraIds] = useState<string[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showErrors, setShowErrors] = useState<Record<string, boolean>>({})
@@ -866,6 +826,12 @@ export const PresetSection = () => {
     null
   )
   const [saving, setSaving] = useState(false)
+  const [importOverwrite, setImportOverwrite] = useState<{
+    file: File
+    id: string
+    name: string
+  } | null>(null)
+  const [staleSave, setStaleSave] = useState<{ id: string; name: string } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string
     name: string
@@ -886,6 +852,25 @@ export const PresetSection = () => {
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
   const loadingRef = useRef(new Set<string>())
+  const mountedRef = useRef(false)
+
+  // 失败错误不在重挂载后显示：先忽略 store 里上一次挂载残留的错误，再在挂载时清掉；
+  // 挂载之后才出现的错误（其它入口触发）仍同步到状态槽。
+  useEffect(() => {
+    if (!mountedRef.current || error === null) {
+      return
+    }
+    setStatus(storeErrorStatus(error, Date.now()))
+  }, [error])
+  useEffect(() => {
+    mountedRef.current = true
+    clearPresetError()
+    return () => {
+      mountedRef.current = false
+      clearPresetError()
+    }
+  }, [])
+
 
   // 选中项：当前启用项 → 第一个 → 空；导入 / 保存 / 删除导致列表变化后修正
   useEffect(() => {
@@ -917,11 +902,16 @@ export const PresetSection = () => {
     void (async () => {
       try {
         let config: PresetConfig | null = null
+        let importedAt: number | undefined
         try {
-          config =
-            id === activeIdRef.current && activeRef.current
-              ? activeRef.current
-              : await loadPresetConfig(id)
+          if (id === activeIdRef.current && activeRef.current) {
+            config = activeRef.current
+            importedAt = presetsRef.current.find((preset) => preset.id === id)?.importedAt
+          } else {
+            const entry = await loadPresetEntry(id)
+            config = entry?.config ?? null
+            importedAt = entry?.importedAt
+          }
         } catch {
           config = null
         }
@@ -933,6 +923,7 @@ export const PresetSection = () => {
             return
           }
           config = summaryConfig(summary)
+          importedAt = summary.importedAt
           fallback = true
           showToast({
             key: 'presetLoadConfigFallback',
@@ -942,8 +933,8 @@ export const PresetSection = () => {
         }
         const resolved: PresetConfig = config
         // 读不到完整配置时用列表信息兜底，标记为未保存，用户可以「保存」修复
-        setDrafts((prev) =>
-          prev[id] ? prev : { ...prev, [id]: draftFromConfig(resolved, fallback) }
+        updatePresetDrafts((prev) =>
+          prev[id] ? prev : { ...prev, [id]: draftFromConfig(resolved, fallback, importedAt) }
         )
       } finally {
         loadingRef.current.delete(id)
@@ -1018,31 +1009,78 @@ export const PresetSection = () => {
         )
   const errors =
     selected && selectedId && showErrors[selectedId] ? validateDraft(selected) : EMPTY_ERRORS
-  const storeErrorStatus: Status =
-    error === null
-      ? null
-      : Object.hasOwn(presetErrorKeys, error)
-        ? { key: presetErrorKeys[error], error: true }
-        : { key: 'presetFailed', error: true }
+
+  /** 导入成功后：旧草稿作废并重新读取（覆盖同 id 时旧草稿不能反向覆盖），切到新预设 */
+  const finishImport = (imported: { id: string; name: string }) => {
+    showToast({ key: 'presetImported' })
+    invalidatePresetDraft(imported.id)
+    setShowErrors((prev) => withoutKey(prev, imported.id))
+    // 导入不会抢占当前启用项：切到新预设并明确提示「尚未启用」
+    setSelectedId(imported.id)
+    if (activeIdRef.current !== imported.id) {
+      setStatus(
+        infoStatus({ key: 'presetImportedNotActive', params: { name: imported.name } }, Date.now())
+      )
+    }
+    // 即使选中的就是同一个 id，也要重新加载导入后的内容（选中项不变时加载 effect 不会重跑）
+    void (async () => {
+      try {
+        const entry = await loadPresetEntry(imported.id)
+        if (!entry) {
+          return
+        }
+        updatePresetDrafts((prev) => {
+          const current = prev[imported.id]
+          // 用户已经在新内容上开始编辑时不要覆盖
+          if (current && current.dirty) {
+            return prev
+          }
+          return {
+            ...prev,
+            [imported.id]: draftFromConfig(entry.config, false, entry.importedAt),
+          }
+        })
+      } catch {
+        // 读取失败时保持旧草稿；下次选中会走兜底
+      }
+    })()
+  }
 
   const onPick = async (file: File) => {
-    setImportStatus(null)
+    setStatus(keepPersistentStatus)
     try {
       const imported = await importPresetZip(file)
-      showToast({ key: 'presetImported' })
-      // 导入不会抢占当前启用项：切到新预设并明确提示「尚未启用」
-      setSelectedId(imported.id)
-      if (activeIdRef.current !== imported.id) {
-        setImportStatus({ key: 'presetSavedNotActive', params: { name: imported.name } })
+      if (imported.conflict === 'userPreset') {
+        // 同 id 的用户自建预设：先确认是否覆盖，确认后带 overwrite 重新导入
+        setImportOverwrite({ file, id: imported.id, name: imported.name })
+        return
       }
+      finishImport(imported)
     } catch (error) {
-      setImportStatus(presetErrorStatus(error, 'presetImportFailed'))
+      setStatus(presetErrorStatus(error, 'presetImportFailed', Date.now()))
+    }
+  }
+
+  /** 用户确认覆盖同 id 的用户自建预设后重新导入 */
+  const confirmImportOverwrite = async () => {
+    const prompt = importOverwrite
+    if (!prompt) {
+      return
+    }
+    setImportOverwrite(null)
+    setStatus(null)
+    try {
+      const imported = await importPresetZip(prompt.file, { overwrite: true })
+      finishImport(imported)
+    } catch (error) {
+      setStatus(presetErrorStatus(error, 'presetImportFailed', Date.now()))
     }
   }
 
   const selectTab = (id: string) => {
     setSelectedId(id)
-    setSaveStatus(null)
+    // 切换标签只清当前选中项的临时错误；「已保存但未启用」等持久提示保留
+    setStatus(keepPersistentStatus)
   }
 
   const createNew = () => {
@@ -1054,10 +1092,10 @@ export const PresetSection = () => {
       id = `${base.id}-${suffix}`
     }
     const config = id === base.id ? base : { ...base, id }
-    setDrafts((prev) => ({ ...prev, [config.id]: draftFromConfig(config, true) }))
+    putPresetDraft(config.id, draftFromConfig(config, true))
     setExtraIds((prev) => [...prev, config.id])
     setSelectedId(config.id)
-    setSaveStatus(null)
+    setStatus(keepPersistentStatus)
   }
 
   /**
@@ -1086,10 +1124,10 @@ export const PresetSection = () => {
       id: nextId,
       name: t('presetCopyName', { name: draft.config.name }),
     }
-    setDrafts((prev) => ({ ...prev, [nextId]: draftFromConfig(config, true) }))
+    putPresetDraft(nextId, draftFromConfig(config, true))
     setExtraIds((prev) => [...prev, nextId])
     setSelectedId(nextId)
-    setSaveStatus(null)
+    setStatus(keepPersistentStatus)
   }
 
   const patchConfig = (mutate: (config: PresetConfig) => PresetConfig) => {
@@ -1098,7 +1136,7 @@ export const PresetSection = () => {
     if (!id || selectedImported) {
       return
     }
-    setDrafts((prev) => {
+    updatePresetDrafts((prev) => {
       const draft = prev[id]
       if (!draft) {
         return prev
@@ -1112,7 +1150,7 @@ export const PresetSection = () => {
     if (!id || selectedImported) {
       return
     }
-    setDrafts((prev) => {
+    updatePresetDrafts((prev) => {
       const draft = prev[id]
       if (!draft) {
         return prev
@@ -1121,7 +1159,11 @@ export const PresetSection = () => {
     })
   }
 
-  const save = async () => {
+  /**
+   * 保存当前草稿。过期草稿（加载后预设被重新导入 / 覆盖）先返回 staleSave 交由用户确认，
+   * 确认后带 overwrite 重试；保存成功后用新的 importedAt 重建草稿，旧草稿内容不再存在。
+   */
+  const save = async (overwrite = false) => {
     const id = selectedId
     if (!id || saving) {
       return
@@ -1137,31 +1179,42 @@ export const PresetSection = () => {
       const missingMetadata = METADATA_FIELD_LABELS.filter(({ field }) => issues[field]).map(
         ({ key }) => t(key)
       )
-      setSaveStatus(
-        missingMetadata.length > 0
-          ? {
-              key: 'presetMetadataRequiredError',
-              params: { fields: missingMetadata.join(t('presetMetadataListSeparator')) },
-              error: true,
-            }
-          : { key: 'presetValidationFailed', error: true }
+      setStatus(
+        errorStatus(
+          missingMetadata.length > 0
+            ? {
+                key: 'presetMetadataRequiredError',
+                params: { fields: missingMetadata.join(t('presetMetadataListSeparator')) },
+              }
+            : { key: 'presetValidationFailed' },
+          Date.now()
+        )
       )
       return
     }
     setSaving(true)
-    setSaveStatus(null)
+    setStatus(null)
     try {
       const config = configFromDraft(draft)
       // 保存本身不会切换启用项（只有当前启用项会被重新载入）：非启用预设保存后需手动「启用」
       const wasActive = activeIdRef.current === config.id
-      await savePresetJson(JSON.stringify(config))
-      const stored = (await loadPresetConfig(config.id)) ?? config
-      setDrafts((prev) => {
+      const outcome = await savePresetJson(JSON.stringify(config), {
+        expectedImportedAt: draft.importedAt,
+        ...(overwrite ? { overwrite: true } : {}),
+      })
+      if (!outcome.ok) {
+        // 草稿基于的配置已被更新：确认后才允许覆盖
+        setStaleSave({ id, name: config.name })
+        return
+      }
+      const entry = await loadPresetEntry(config.id)
+      const stored = entry?.config ?? config
+      updatePresetDrafts((prev) => {
         const current = prev[id]
         if (!current) {
           return prev
         }
-        return { ...prev, [id]: draftFromConfig(stored, false) }
+        return { ...prev, [id]: draftFromConfig(stored, false, entry?.importedAt) }
       })
       setExtraIds((prev) => prev.filter((extra) => extra !== id))
       setShowErrors((prev) => ({ ...prev, [id]: false }))
@@ -1169,13 +1222,25 @@ export const PresetSection = () => {
         showToast({ key: 'presetSaved' })
       } else {
         // 明确告诉用户：已保存，但请求仍会使用当前启用项，必须点「启用」才生效
-        setSaveStatus({ key: 'presetSavedNotActive', params: { name: config.name } })
+        setStatus(
+          infoStatus({ key: 'presetSavedNotActive', params: { name: config.name } }, Date.now())
+        )
       }
     } catch (error) {
-      setSaveStatus(presetErrorStatus(error, 'presetSaveFailed'))
+      setStatus(presetErrorStatus(error, 'presetSaveFailed', Date.now()))
     } finally {
       setSaving(false)
     }
+  }
+
+  /** 用户确认用当前草稿覆盖已被更新的预设 */
+  const confirmStaleSave = async () => {
+    const prompt = staleSave
+    if (!prompt) {
+      return
+    }
+    setStaleSave(null)
+    await save(true)
   }
 
   const activate = async () => {
@@ -1188,13 +1253,13 @@ export const PresetSection = () => {
     }
     // 启用读取的是已保存配置：草稿里有未保存修改时先拦住，避免提示词被旧值覆盖
     if (draftsRef.current[id]?.dirty) {
-      setSaveStatus({ key: 'presetActivateUnsaved', error: true })
+      setStatus(errorStatus({ key: 'presetActivateUnsaved' }, Date.now()))
       return
     }
     setPending({ id, action: 'activate' })
     try {
       await activatePreset(id)
-      setSaveStatus(null)
+      setStatus(keepPersistentStatus)
     } catch {
       showToast({ key: 'presetActivateFailed', type: 'error' })
     } finally {
@@ -1212,17 +1277,24 @@ export const PresetSection = () => {
     }
     setPending({ id, action: 'restore' })
     try {
-      const config =
+      const entry =
         id === activeIdRef.current && activeRef.current
-          ? activeRef.current
-          : await loadPresetConfig(id)
-      if (!config) {
+          ? {
+              config: activeRef.current,
+              importedAt: presetsRef.current.find((preset) => preset.id === id)?.importedAt,
+            }
+          : await loadPresetEntry(id)
+      if (!entry) {
         showToast({ key: 'presetFailed', type: 'error' })
         return
       }
-      setDrafts((prev) => (prev[id] ? { ...prev, [id]: draftFromConfig(config, false) } : prev))
+      updatePresetDrafts((prev) =>
+        prev[id]
+          ? { ...prev, [id]: draftFromConfig(entry.config, false, entry.importedAt) }
+          : prev
+      )
       setShowErrors((prev) => ({ ...prev, [id]: false }))
-      setSaveStatus(null)
+      setStatus(keepPersistentStatus)
     } catch {
       showToast({ key: 'presetFailed', type: 'error' })
     } finally {
@@ -1249,7 +1321,7 @@ export const PresetSection = () => {
       const order = tabItems.map((tab) => tab.id)
       const index = order.indexOf(target.id)
       const nextId = order[index + 1] ?? order[index - 1] ?? null
-      setDrafts((prev) => withoutKey(prev, target.id))
+      removePresetDraft(target.id)
       setExtraIds((prev) => prev.filter((id) => id !== target.id))
       setShowErrors((prev) => withoutKey(prev, target.id))
       setSelectedId((current) => (current === target.id ? nextId : current))
@@ -1268,7 +1340,6 @@ export const PresetSection = () => {
     setText: patchText,
     readOnly: selectedImported,
   }
-  const status = importStatus ?? saveStatus
 
   return (
     <div className={styles.section} aria-busy={importing || saving}>
@@ -1304,14 +1375,10 @@ export const PresetSection = () => {
       </div>
       {status ? (
         <div
-          className={clsx(styles.status, status.error && styles.statusError)}
-          role={status.error ? 'alert' : 'status'}
+          className={clsx(styles.status, status.kind === 'error' && styles.statusError)}
+          role={status.kind === 'error' ? 'alert' : 'status'}
         >
-          {t(status.key, status.params)}
-        </div>
-      ) : storeErrorStatus ? (
-        <div className={clsx(styles.status, styles.statusError)} role="alert">
-          {t(storeErrorStatus.key, storeErrorStatus.params)}
+          {t(status.message.key, status.message.params)}
         </div>
       ) : null}
       {!ready ? (
@@ -1507,6 +1574,49 @@ export const PresetSection = () => {
         >
           <div>{t('presetDeleteConfirm')}</div>
           <div className={styles.deleteName}>{deleteTarget.name}</div>
+        </Modal>
+      ) : null}
+      {importOverwrite ? (
+        <Modal
+          title={t('presetOverwriteConfirmTitle')}
+          className={settingsStyles.deleteConfirm}
+          onClose={() => setImportOverwrite(null)}
+          footer={
+            <div className={settingsStyles.deleteActions}>
+              <Button variant="outlined" size="m" autoFocus onClick={() => setImportOverwrite(null)}>
+                {t('cancel')}
+              </Button>
+              <Button variant="danger" size="m" onClick={() => void confirmImportOverwrite()}>
+                {t('presetOverwriteConfirmAction')}
+              </Button>
+            </div>
+          }
+        >
+          <div>
+            {t('presetOverwriteConfirm', {
+              name: importOverwrite.name,
+              id: importOverwrite.id,
+            })}
+          </div>
+        </Modal>
+      ) : null}
+      {staleSave ? (
+        <Modal
+          title={t('presetStaleDraftConfirmTitle')}
+          className={settingsStyles.deleteConfirm}
+          onClose={() => setStaleSave(null)}
+          footer={
+            <div className={settingsStyles.deleteActions}>
+              <Button variant="outlined" size="m" autoFocus onClick={() => setStaleSave(null)}>
+                {t('cancel')}
+              </Button>
+              <Button variant="danger" size="m" onClick={() => void confirmStaleSave()}>
+                {t('presetStaleDraftConfirmAction')}
+              </Button>
+            </div>
+          }
+        >
+          <div>{t('presetStaleDraftConfirm', { name: staleSave.name })}</div>
         </Modal>
       ) : null}
     </div>

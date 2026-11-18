@@ -327,6 +327,25 @@ test('zip 导入：解压后总大小超过 10MB 拒绝（tooLarge）', async ()
   )
 })
 
+test('zip 导入：单条目声明大小超过单条上限时拒绝（不必等整包解压完）', async () => {
+  // 6 MB 单条目：低于 10 MB 总量上限，但超过 5 MB 单条目上限
+  const big = new Uint8Array(6 * 1024 * 1024)
+  await assert.rejects(
+    parsePresetZip(
+      new File(
+        [
+          zipSync({
+            'api_configs.json': strToU8(JSON.stringify(FULL_CONFIG)),
+            'big.bin': big,
+          }),
+        ],
+        'preset.zip'
+      )
+    ),
+    (error) => error instanceof PresetError && error.code === 'tooLarge'
+  )
+})
+
 test('zip 导入：非 zip / 空包 / 缺清单 / 清单在子目录都拒绝', async () => {
   const notZip = new File([strToU8('not a zip')], 'preset.zip')
   await assert.rejects(

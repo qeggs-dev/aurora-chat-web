@@ -82,6 +82,25 @@ test('zip 基础校验：非 zip / 无 index / index 不在根目录 / 条目过
   await expectCode(parseStylePackZip(huge), 'tooLarge')
 })
 
+test('zip 基础校验：单条目声明大小超过单条上限时拒绝（不必等整包解压完）', async () => {
+  // 21 MB 单条目：低于 60 MB 总量上限，但超过 20 MB 单条目上限
+  const big = new Uint8Array(21 * 1024 * 1024)
+  await expectCode(
+    parseStylePackZip(
+      new File(
+        [
+          zipSync({
+            'index.json': strToU8(JSON.stringify(manifest())),
+            'big.bin': big,
+          }),
+        ],
+        'x.zip'
+      )
+    ),
+    'tooLarge'
+  )
+})
+
 test('zip 里显式的目录条目不影响导入（按文件条目计数）', async () => {
   // 常见 zip 工具会写入 assets/ 这类目录条目；它们没有内容，不应被当成非法路径
   const parsed = await parseStylePackZip(

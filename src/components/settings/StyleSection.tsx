@@ -333,7 +333,11 @@ const StylePackDetailContent = ({
           </DetailRow>
           <DetailRow label={t('stylePackDetailImportedAt')}>{importedAt}</DetailRow>
           <DetailRow label={t('stylePackDetailStatus')}>
-            {isActive ? t('stylePackInUse') : t('stylePackDetailNotLoaded')}
+            {pack.broken
+              ? t('stylePackBrokenHint')
+              : isActive
+                ? t('stylePackInUse')
+                : t('stylePackDetailNotLoaded')}
           </DetailRow>
           <DetailRow label={t('stylePackDetailSidebarTitle')}>
             {manifest.sidebarTitle || (
@@ -530,10 +534,17 @@ const StylePackDetailContent = ({
       </DetailSection>
 
       <div className={styles.detailActions} aria-busy={busy}>
-        {isActive ? (
+        {pack.broken ? (
+          <span className={settingsStyles.stylePackBadge}>{t('stylePackBrokenBadge')}</span>
+        ) : isActive ? (
           <span className={settingsStyles.stylePackBadge}>{t('stylePackInUse')}</span>
         ) : (
-          <Button variant="outlined" size="m" disabled={busy} onClick={onLoad}>
+          <Button
+            variant="outlined"
+            size="m"
+            disabled={busy}
+            onClick={onLoad}
+          >
             {t(pending ? 'stylePackLoadingPack' : 'stylePackLoad')}
           </Button>
         )}
@@ -572,8 +583,9 @@ export const StyleSection = () => {
 
   const busy = pendingId !== null || restoring || importing
   const detailPack = detailId === null ? undefined : packs.find((pack) => pack.id === detailId)
-  /** 本机内置样式包 id（内置资产缺失 / 被用户同 id 包覆盖时为 null） */
-  const builtinId = packs.find((pack) => pack.builtin === true)?.id ?? null
+  /** 本机内置样式包（记录完整才可用于「恢复默认」；损坏时按不可用处理） */
+  const builtinPack = packs.find((pack) => pack.builtin === true)
+  const builtinId = builtinPack && builtinPack.broken !== true ? builtinPack.id : null
   /** 当前生效的是「默认样式」：内置包启用中，或没有任何包（应用默认外观） */
   const defaultActive = activeId === null || builtinId === activeId
 
@@ -696,9 +708,11 @@ export const StyleSection = () => {
             </div>
           ) : error ? (
             <div className={clsx(styles.status, styles.statusError)} role="alert">
-              {Object.hasOwn(importErrorKeys, error)
-                ? t(importErrorKeys[error as StylePackErrorCode])
-                : t('stylePackFailed')}
+              {error === 'brokenPack'
+                ? t('stylePackBrokenHint')
+                : Object.hasOwn(importErrorKeys, error)
+                  ? t(importErrorKeys[error as StylePackErrorCode])
+                  : t('stylePackFailed')}
             </div>
           ) : null}
           {!ready ? (
@@ -778,10 +792,10 @@ export const StyleSection = () => {
                     <button
                       type="button"
                       className={settingsStyles.stylePackMain}
-                      disabled={isActive || busy}
+                      disabled={isActive || busy || pack.broken === true}
                       aria-label={`${t('stylePackLoad')}: ${pack.name}`}
                       onClick={() => {
-                        if (!isActive) {
+                        if (!isActive && !pack.broken) {
                           void load(pack.id)
                         }
                       }}
@@ -806,9 +820,18 @@ export const StyleSection = () => {
                               {t('stylePackBuiltinBadge')}
                             </span>
                           ) : null}
+                          {pack.broken ? (
+                            <span className={settingsStyles.stylePackBadge}>
+                              {t('stylePackBrokenBadge')}
+                            </span>
+                          ) : null}
                         </span>
                         {meta ? <span className={settingsStyles.stylePackMeta}>{meta}</span> : null}
-                        {pack.description ? (
+                        {pack.broken ? (
+                          <span className={settingsStyles.stylePackDescription}>
+                            {t('stylePackBrokenHint')}
+                          </span>
+                        ) : pack.description ? (
                           <span className={settingsStyles.stylePackDescription}>
                             {pack.description}
                           </span>
@@ -822,7 +845,8 @@ export const StyleSection = () => {
                         <Button
                           variant="outlined"
                           size="m"
-                          disabled={busy}
+                          disabled={busy || pack.broken === true}
+                          title={pack.broken ? t('stylePackBrokenHint') : undefined}
                           onClick={() => void load(pack.id)}
                         >
                           {t(activating ? 'stylePackLoadingPack' : 'stylePackLoad')}

@@ -1,5 +1,5 @@
 /** 样式包 zip 的解析与校验：路径、大小、扩展名、清单字段与字符串安全边界都在这里把关。 */
-import { unzipSync } from 'fflate'
+import { readZipEntries, ZipReadError } from '../zip/reader.js'
 import {
   PALETTE_KEYS,
   STYLE_EFFECT_KEYS,
@@ -61,6 +61,8 @@ export class StylePackError extends Error {
 
 const MAX_ZIP_BYTES = 20 * 1024 * 1024
 const MAX_TOTAL_BYTES = 60 * 1024 * 1024
+/** 单个文件条目解压后的上限：低于总量上限，避免一个超大条目先吃满内存 */
+const MAX_ENTRY_BYTES = 20 * 1024 * 1024
 const MAX_ENTRIES = 300
 const MAX_LICENSE_BYTES = 200 * 1024
 /** 详情页封面单独限制 5 MB（比普通图片更严，避免列表刷新时生成过大的 objectURL） */
@@ -796,40 +798,40 @@ const readManifestInput = (text: string): StyleManifestInput => {
   }
 }
 
+/** 流式解压错误码 → 样式包导入错误码（tooLarge / tooManyFiles / notZip 同名） */
+const zipReadError = (error: unknown): StylePackError =>
+  error instanceof ZipReadError
+    ? new StylePackError(error.code, error.detail)
+    : new StylePackError('notZip')
+
 export const parseStylePackZip = async (file: File): Promise<ParsedStylePack> => {
   if (file.size > MAX_ZIP_BYTES) {
     throw new StylePackError('tooLarge', `${file.size} bytes`)
   }
-  let entries: Record<string, Uint8Array>
+  let entries: Map<string, Uint8Array>
   try {
-    entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
-  } catch {
-    throw new StylePackError('notZip')
+    // 逐条流式解压并在累计未压缩字节超限时立即中止，不先整包解压
+    entries = readZipEntries(new Uint8Array(await file.arrayBuffer()), {
+      maxEntries: MAX_ENTRIES,
+      maxEntryBytes: MAX_ENTRY_BYTES,
+      maxTotalBytes: MAX_TOTAL_BYTES,
+    })
+  } catch (error) {
+    throw zipReadError(error)
   }
 
-  // 目录条目没有内容，跳过；只对文件做路径、数量与大小校验
-  const names = Object.keys(entries).filter(
-    (name) => !name.endsWith('/') && !name.endsWith('\\')
-  )
-  if (names.length === 0) {
+  // 目录条目已由 readZipEntries 跳过，这里只对文件做路径与数量校验
+  if (entries.size === 0) {
     throw new StylePackError('noIndex')
-  }
-  if (names.length > MAX_ENTRIES) {
-    throw new StylePackError('tooManyFiles', String(names.length))
   }
 
   const paths = new Map<string, Uint8Array>()
-  let total = 0
-  for (const name of names) {
+  for (const [name, bytes] of entries) {
     const normalized = normalizeEntryPath(name)
     if (!normalized) {
       throw new StylePackError('badPath', name)
     }
-    total += entries[name].length
-    if (total > MAX_TOTAL_BYTES) {
-      throw new StylePackError('tooLarge', 'uncompressed limit')
-    }
-    paths.set(normalized, entries[name])
+    paths.set(normalized, bytes)
   }
 
   // 大小写不敏感索引：小写归一化路径 → 真实条目名（读取一律用真实条目名，zip 内容字节不变）

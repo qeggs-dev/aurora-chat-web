@@ -1,5 +1,5 @@
 /** preset zip 与 api_configs.json 的解析与校验：路径、大小、扩展名与清单字段都在这里把关。 */
-import { unzipSync } from 'fflate'
+import { readZipEntries, ZipReadError } from '../zip/reader.js'
 import {
   assertPresetMetadata,
   DEFAULT_PRESET_COMPACTION,
@@ -17,6 +17,7 @@ import {
 
 const MAX_ZIP_BYTES = 5 * 1024 * 1024
 const MAX_TOTAL_BYTES = 10 * 1024 * 1024
+const MAX_ENTRY_BYTES = 5 * 1024 * 1024
 const MAX_ENTRIES = 100
 const MAX_LICENSE_BYTES = 200 * 1024
 const MAX_PROMPT_BYTES = 64 * 1024
@@ -610,38 +611,39 @@ export type ParsedPreset = {
   promptText?: string
 }
 
+/** 流式解压错误码 → preset 导入错误码（两个模块的错误码名字一致，直接把 code 透传） */
+const zipReadError = (error: unknown): PresetError =>
+  error instanceof ZipReadError
+    ? new PresetError(error.code, error.detail)
+    : new PresetError('notZip')
+
 export const parsePresetZip = async (file: File): Promise<ParsedPreset> => {
   if (file.size > MAX_ZIP_BYTES) {
     throw new PresetError('tooLarge', `${file.size} bytes`)
   }
-  let entries: Record<string, Uint8Array>
+  let entries: Map<string, Uint8Array>
   try {
-    entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
-  } catch {
-    throw new PresetError('notZip')
+    // 逐条流式解压并在累计未压缩字节超限时立即中止，不先整包解压
+    entries = readZipEntries(new Uint8Array(await file.arrayBuffer()), {
+      maxEntries: MAX_ENTRIES,
+      maxEntryBytes: MAX_ENTRY_BYTES,
+      maxTotalBytes: MAX_TOTAL_BYTES,
+    })
+  } catch (error) {
+    throw zipReadError(error)
   }
 
-  // 目录条目没有内容，跳过；只对文件做路径、数量与大小校验
-  const names = Object.keys(entries).filter((name) => !name.endsWith('/') && !name.endsWith('\\'))
-  if (names.length === 0) {
+  // 目录条目已由 readZipEntries 跳过，这里只对文件做路径校验
+  if (entries.size === 0) {
     throw new PresetError('noConfig')
   }
-  if (names.length > MAX_ENTRIES) {
-    throw new PresetError('tooManyFiles', String(names.length))
-  }
-
   const paths = new Map<string, Uint8Array>()
-  let total = 0
-  for (const name of names) {
+  for (const [name, bytes] of entries) {
     const normalized = normalizeEntryPath(name)
     if (!normalized) {
       throw new PresetError('badPath', name)
     }
-    total += entries[name].length
-    if (total > MAX_TOTAL_BYTES) {
-      throw new PresetError('tooLarge', 'uncompressed limit')
-    }
-    paths.set(normalized, entries[name])
+    paths.set(normalized, bytes)
   }
 
   // 大小写不敏感索引：小写归一化路径 → 真实条目名（读取一律用真实条目名，zip 内容字节不变）

@@ -54,9 +54,13 @@ const hashText = (text: string): string => {
   return (hash >>> 0).toString(36)
 }
 
-/** effects 指纹：缓存键的一部分 */
+/**
+ * effects 指纹：缓存键的一部分。
+ * 空对象与 undefined 等价（都不产生特效），统一返回 'none'——否则导入时被净化成 `{}`
+ * 的资源会与没有 effects 的资源算出不同缓存键，白白重复派生。
+ */
 export const effectsHash = (effects: StyleEffects | undefined): string =>
-  effects ? hashText(stableStringify(effects)) : 'none'
+  effects && Object.keys(effects).length > 0 ? hashText(stableStringify(effects)) : 'none'
 
 /** 是否需要 alpha 通道派生图（描边 / 外发光 / 内发光 / 浮雕） */
 export const hasStaticEffects = (effects: StyleEffects | undefined): boolean =>
