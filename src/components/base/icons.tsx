@@ -193,6 +193,29 @@ export const IconMenuOutline20 = () => (
   </svg>
 )
 
+export const IconVolumeOutline20 = () => (
+  <svg width={20} height={20} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M3.2 7.9H5.9L9.4 4.9C9.7 4.66 10.2 4.88 10.2 5.27V14.73C10.2 15.12 9.7 15.34 9.4 15.1L5.9 12.1H3.2C2.98 12.1 2.8 11.92 2.8 11.7V8.3C2.8 8.08 2.98 7.9 3.2 7.9Z"
+      stroke="currentColor"
+      strokeWidth={1.4}
+      strokeLinejoin="round"
+    />
+    <path
+      d="M12.6 7.4C13.35 8.15 13.8 8.98 13.8 10C13.8 11.02 13.35 11.85 12.6 12.6"
+      stroke="currentColor"
+      strokeWidth={1.4}
+      strokeLinecap="round"
+    />
+    <path
+      d="M15 4.9C16.35 6.25 17.2 8.05 17.2 10C17.2 11.95 16.35 13.75 15 15.1"
+      stroke="currentColor"
+      strokeWidth={1.4}
+      strokeLinecap="round"
+    />
+  </svg>
+)
+
 export const IconNewChatOutline20 = () => (
   <svg width={20} height={20} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path

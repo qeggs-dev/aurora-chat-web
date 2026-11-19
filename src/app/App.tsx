@@ -34,6 +34,7 @@ import { updateErrorMessageKey } from '../services/update/messages.js'
 import { useUpdateStore } from '../services/update/store.js'
 import { Button } from '../components/base/Button.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
+import { bindAutoReadRuntime } from '../services/speech/autoReadRuntime.js'
 import { CollapsedSider } from '../components/sider/CollapsedSider.js'
 import { closeMobileSider, useMobileSider } from '../components/sider/mobileSiderState.js'
 import { MobileSider, Sider } from '../components/sider/Sider.js'
@@ -159,6 +160,8 @@ export const App = () => {
   useEffect(closeSearchPanel, [activeId])
   // 切换会话时停止朗读
   useEffect(stopReadAloud, [activeId])
+  // 自动朗读：订阅会话「生成中 → 空闲」，开关开启时朗读刚完成的回复；关闭开关立即停止
+  useEffect(bindAutoReadRuntime, [])
   // 移动端选中会话、切换布局后收起抽屉；选中会话的收起由侧边栏按高亮编排自己处理，
   // 这里只在抽屉仍打开时兜底（避免覆盖掉 selection 的退出编排）
   useEffect(() => {

@@ -39,6 +39,7 @@ import {
 } from '../../services/settings.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
 import { builtinLocaleOf } from '../../i18n/messages.js'
+import { setAutoReadEnabled } from '../../services/speech/autoReadRuntime.js'
 import { shouldShowUpdateBadge, useUpdateStore } from '../../services/update/store.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
@@ -432,6 +433,7 @@ const SettingsContent = ({
               <CompatibilitySetting />
               <AutoCheckUpdatesSetting />
               <TtsVoiceSetting />
+              <AutoReadAloudSetting />
               <LocationSetting />
             </>
           ) : rendered === 'usage' ? (
@@ -707,6 +709,21 @@ const TtsVoiceSetting = () => {
           onChange={setTtsVoice}
         />
       }
+    />
+  )
+}
+
+/** 自动朗读：与移动端顶栏喇叭按钮同步；打开时在点击手势里预热 AudioContext */
+const AutoReadAloudSetting = () => {
+  const t = useTranslate()
+  const autoReadAloud = useSettings((state) => state.autoReadAloud)
+  const label = t('settingsAutoReadAloud')
+  return (
+    <SettingCell
+      label={label}
+      description={t('settingsAutoReadAloudDescription')}
+      status={null}
+      action={<Switch checked={autoReadAloud} label={label} onChange={setAutoReadEnabled} />}
     />
   )
 }

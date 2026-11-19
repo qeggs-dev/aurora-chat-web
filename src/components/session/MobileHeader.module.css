@@ -17,3 +17,19 @@
   font: var(--dsw-font-s-strong-14);
   color: var(--dsw-alias-label-primary);
 }
+
+/* 欢迎页：没有标题时把自动朗读按钮推到右端 */
+.spacer {
+  flex: 1;
+}
+
+/* 自动朗读开启：与输入框的开关高亮保持一致 */
+.active {
+  background-color: var(--dsw-alias-button-ghost-active-fill);
+  color: var(--dsw-alias-brand-text);
+
+  &:hover:not(:disabled),
+  &:active:not(:disabled) {
+    background-color: var(--dsw-alias-button-ghost-active-hover);
+  }
+}

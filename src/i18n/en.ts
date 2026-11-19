@@ -195,6 +195,9 @@ export const en = {
   settingsTtsVoice: 'Read-aloud voice',
   settingsTtsVoiceStella: 'Stella (female)',
   settingsTtsVoiceTide: 'Tide (male)',
+  settingsAutoReadAloud: 'Auto read aloud',
+  settingsAutoReadAloudDescription:
+    'Read each newly completed answer aloud; one at a time. Switching chats or turning this off stops playback immediately.',
   settingsLocation: 'Location',
   settingsLocationProvince: 'Select province/region',
   settingsLocationCity: 'Select city',
@@ -279,6 +282,10 @@ export const en = {
   ttsStop: 'Stop reading',
   ttsUnavailable: 'This answer cannot be read aloud right now',
   ttsFailed: 'Failed to read aloud. Please try again later.',
+  autoReadOn: 'Auto read aloud: on',
+  autoReadOff: 'Auto read aloud: off',
+  autoReadUnavailable:
+    'Cannot read aloud automatically: the browser blocked audio playback. Turn the switch on again manually.',
   retry: 'Retry',
   latestReminderLanguage: 'English',
   settingsLocaleZhCN: 'Simplified Chinese',

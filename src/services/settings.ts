@@ -26,6 +26,8 @@ type Settings = {
   disclaimerAccepted: boolean
   /** 启动时自动检查更新（默认开启；关掉后不再在启动时请求 GitHub） */
   autoCheckUpdates: boolean
+  /** 自动朗读：新完成的助手回复自动朗读（默认关闭） */
+  autoReadAloud: boolean
 }
 
 const KEYS = {
@@ -40,6 +42,7 @@ const KEYS = {
   compatibilityMode: 'chat-demo:compatibility-mode',
   disclaimerAccepted: 'chat-demo:disclaimer-accepted',
   autoCheckUpdates: 'chat-demo:auto-check-updates',
+  autoReadAloud: 'chat-demo:auto-read-aloud',
 } as const
 
 const read = (key: string) => {
@@ -115,6 +118,7 @@ export const useSettings = create<Settings>(() => ({
   disclaimerAccepted: read(KEYS.disclaimerAccepted) === 'true',
   // 默认开启：只有显式存过 'false' 才关闭
   autoCheckUpdates: read(KEYS.autoCheckUpdates) !== 'false',
+  autoReadAloud: read(KEYS.autoReadAloud) === 'true',
 }))
 
 export const setLocale = (locale: Locale) => {
@@ -174,4 +178,10 @@ export const acceptDisclaimer = () => {
 export const setAutoCheckUpdates = (autoCheckUpdates: boolean) => {
   write(KEYS.autoCheckUpdates, String(autoCheckUpdates))
   useSettings.setState({ autoCheckUpdates })
+}
+
+/** 自动朗读开关：由顶栏喇叭按钮与设置 → 通用设置共同读写 */
+export const setAutoReadAloud = (autoReadAloud: boolean) => {
+  write(KEYS.autoReadAloud, String(autoReadAloud))
+  useSettings.setState({ autoReadAloud })
 }
